@@ -15,9 +15,23 @@ _feature_lock = threading.Lock()
 _feature_source = None
 
 
+def _resolve_model_constructor(classifier):
+    """Use the same Keras namespace as the loaded classifier."""
+    module_name = classifier.__class__.__module__
+
+    if module_name.startswith("keras."):
+        from keras import Model
+
+        return Model
+
+    from tensorflow.keras.models import Model
+
+    return Model
+
+
 def _build_feature_model(classifier) -> Any:
     """Return a model that outputs the penultimate layer embedding."""
-    from tensorflow.keras.models import Model
+    Model = _resolve_model_constructor(classifier)
 
     # Prefer explicit dense/global pooling before softmax.
     for layer in reversed(classifier.layers[:-1]):
