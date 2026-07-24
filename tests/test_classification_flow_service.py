@@ -3,7 +3,7 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from app import create_app
 from models import KelasKhat, Pengguna, ProbabilitasPrediksi, PerhitunganAlgoritma, RiwayatKlasifikasi, db
@@ -27,9 +27,8 @@ class TestClassificationFlow(unittest.TestCase):
         self.assertFalse(allowed_classification_file("sample.webp"))
         self.assertFalse(allowed_classification_file("sample.pdf"))
 
-    @patch("services.classification_flow_service.predict_cnn_image")
     @patch("services.classification_flow_service.ensure_active_cnn_model_version")
-    def test_persist_classification_result(self, mock_model, mock_predict):
+    def test_persist_classification_result(self, mock_model):
         mock_model.return_value = 1
         user = Pengguna.query.filter_by(username="user").first()
         if not user:
@@ -38,7 +37,12 @@ class TestClassificationFlow(unittest.TestCase):
             db.session.add(user)
             db.session.commit()
 
-        for slug, name in [("naskhi", "Khat Naskhi"), ("riqah", "Khat Riq'ah"), ("diwani", "Khat Diwani"), ("kufi", "Khat Kufi")]:
+        for slug, name in [
+            ("naskhi", "Khat Naskhi"),
+            ("diwani", "Khat Diwani"),
+            ("diwani_jali", "Khat Diwani Jali"),
+            ("tsuluts", "Khat Tsuluts"),
+        ]:
             if not KelasKhat.query.filter_by(slug=slug).first():
                 db.session.add(KelasKhat(nama_kelas=name, slug=slug))
         db.session.commit()
@@ -52,7 +56,12 @@ class TestClassificationFlow(unittest.TestCase):
             prediction = {
                 "predicted_class": "naskhi",
                 "confidence": 0.91,
-                "scores": {"naskhi": 0.91, "riqah": 0.03, "diwani": 0.04, "kufi": 0.02},
+                "scores": {
+                    "naskhi": 0.91,
+                    "diwani": 0.04,
+                    "diwani_jali": 0.03,
+                    "tsuluts": 0.02,
+                },
             }
             row = persist_classification_result(
                 user_id=user.id,

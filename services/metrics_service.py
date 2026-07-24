@@ -78,7 +78,7 @@ def academic_improvement_recommendations(
 
     for pair in confused_pairs[:5]:
         true_d = pair.get("true_display") or pair.get("true_class", "").replace("_", " ").title()
-        pred_d = pair.get("predicted_display") or pair.get("predicted_class", "").replace("_", " ").title()
+        pred_d = pair.get("predicted_display") or (pair.get("predicted_class") or "").replace("_", " ").title()
         recs.append(f"Classes often confused: {true_d} predicted as {pred_d}. Add more visual variations and review mislabeled samples.")
 
     recs.extend([

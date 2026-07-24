@@ -256,7 +256,7 @@
           <div class="dash-v2-latest-info">
             <div class="dash-v2-latest-badges">
               {% if latest_result.predicted_class %}
-              <span class="dash-v2-class-badge lg {{ latest_result.predicted_class }}">{{ class_labels_id.get(latest_result.predicted_class, latest_result.predicted_class.replace('_', ' ').title()) }}</span>
+              <span class="dash-v2-class-badge lg {{ latest_result.predicted_class or 'uncertain' }}">{{ class_labels_id.get(latest_result.predicted_class, latest_result.predicted_class.replace('_', ' ').title()) if latest_result.predicted_class else 'Belum Dapat Dipastikan' }}</span>
               {% elif latest_result.input_status == 'non_khat' %}
               <span class="dash-v2-status-badge reject lg">Non-Khat</span>
               {% elif latest_result.input_status == 'unrecognized' %}
@@ -318,7 +318,7 @@
             <img src="{{ url_for('static', filename=row.image_path.replace('static/', '')) }}" alt="" class="dash-v2-activity-thumb">
             <div class="dash-v2-activity-main">
               {% if row.predicted_class %}
-              <span class="dash-v2-class-badge sm {{ row.predicted_class }}">{{ class_labels_id.get(row.predicted_class, row.predicted_class.replace('_', ' ').title()) }}</span>
+              <span class="dash-v2-class-badge sm {{ row.predicted_class or 'uncertain' }}">{{ class_labels_id.get(row.predicted_class, row.predicted_class.replace('_', ' ').title()) if row.predicted_class else 'Belum Dapat Dipastikan' }}</span>
               {% elif row.input_status == 'non_khat' %}
               <span class="dash-v2-status-badge reject sm">Non-Khat</span>
               {% elif row.input_status == 'unrecognized' %}
