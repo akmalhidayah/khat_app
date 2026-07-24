@@ -675,16 +675,110 @@ def predict_image(
     force_classify: bool = False,
     preprocessing_mode: str = "standard",
 ) -> Dict:
-    # Pre-CNN validation: Arabic writing only, reject photos / non-Arabic scripts.
+    # Pre-CNN validation is evaluated first, but a rejection may be
+    # overridden conservatively when the trained Khat detector and the
+    # independent content gate both confirm likely Arabic calligraphy.
+    pre_validation = None
+    pre_rejection = None
+    pre_rejection_overridden = False
+
     if pipeline_enabled() and not force_classify:
         try:
-            pre = validate_before_cnn(image_path)
-            if not pre.get("accepted"):
-                return to_flask_rejection(pre)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Pre-CNN validation pipeline failed open: %s", exc)
+            pre_validation = validate_before_cnn(image_path)
 
-    detection = detect_khat(image_path, force_classify=force_classify)
+            if not pre_validation.get("accepted"):
+                pre_rejection = to_flask_rejection(
+                    pre_validation
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Pre-CNN validation pipeline failed open: %s",
+                exc,
+            )
+
+    detection = detect_khat(
+        image_path,
+        force_classify=force_classify,
+    )
+
+    if pre_rejection is not None:
+        content_gate = detection.get("content_gate") or {}
+
+        try:
+            khat_probability = float(
+                detection.get("khat_probability") or 0.0
+            )
+        except (TypeError, ValueError):
+            khat_probability = 0.0
+
+        try:
+            borderline_threshold = float(
+                detection.get("borderline_threshold")
+                or current_app.config.get(
+                    "KHAT_BORDERLINE_THRESHOLD",
+                    0.65,
+                )
+            )
+        except (TypeError, ValueError):
+            borderline_threshold = 0.65
+
+        explicit_non_khat = bool(
+            content_gate.get("is_non_khat_content")
+            or content_gate.get(
+                "is_photographic_non_khat"
+            )
+            or content_gate.get(
+                "is_latin_script_non_khat"
+            )
+        )
+
+        content_confirms_khat = bool(
+            content_gate.get("looks_like_calligraphy")
+            or content_gate.get("decision_code")
+            == "likely_khat_content"
+        )
+
+        detector_confirms_khat = bool(
+            detection.get("detector_available")
+            and detection.get("is_khat")
+            and detection.get("stage2_allowed")
+            and khat_probability >= borderline_threshold
+            and content_confirms_khat
+            and not explicit_non_khat
+        )
+
+        if not detector_confirms_khat:
+            return pre_rejection
+
+        pre_rejection_overridden = True
+        detection = dict(detection)
+
+        detection["manual_review_required"] = True
+        detection["detection_decision"] = (
+            "continue_caution"
+        )
+        detection["detection_decision_label"] = (
+            "Continue with caution"
+        )
+        detection["stage2_permission"] = (
+            "Enabled with caution"
+        )
+        detection["moderate_confidence_note"] = (
+            "Validator awal tidak mengenali tulisan Arab, "
+            "tetapi detektor Khat terlatih dan pemeriksaan "
+            "konten sama-sama mengonfirmasi citra kaligrafi. "
+            "Klasifikasi dilanjutkan dengan validasi manual."
+        )
+        detection["message"] = (
+            "Gambar dikonfirmasi sebagai kaligrafi oleh "
+            "detektor Khat dan content gate. Stage 2 "
+            "dilanjutkan dengan kehati-hatian karena hasil "
+            "Pre-CNN validation tidak konsisten."
+        )
+        detection["pre_cnn_validation"] = (
+            pre_validation
+        )
+
     model_ctx = get_model_context()
 
     base = {
@@ -708,6 +802,11 @@ def predict_image(
         "borderline_threshold": detection.get("borderline_threshold"),
         "stage2_permission": detection.get("stage2_permission"),
         "detection_explanation": detection.get("detection_explanation"),
+        "pre_cnn_validation": detection.get(
+            "pre_cnn_validation",
+            pre_validation,
+        ),
+        "pre_cnn_override": pre_rejection_overridden,
         "force_classify": force_classify,
         "tta_used": use_tta,
         "preprocessing_mode": preprocessing_mode,
