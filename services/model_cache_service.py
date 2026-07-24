@@ -16,7 +16,17 @@ def get_cached_classifier(model_path: str, architecture: str, num_classes: int):
     if key not in _CACHE:
         from services.model_builder_service import load_trained_classifier
 
-        _CACHE[key] = load_trained_classifier(model_path, architecture, num_classes)
+        model = load_trained_classifier(model_path, architecture, num_classes)
+        output_shape = getattr(model, "output_shape", None)
+        if isinstance(output_shape, list):
+            output_shape = output_shape[0]
+        actual_outputs = int(output_shape[-1]) if output_shape and output_shape[-1] else None
+        if actual_outputs is not None and actual_outputs != int(num_classes):
+            raise ValueError(
+                f"Model output size is {actual_outputs}; expected {num_classes}. "
+                "Prediction stopped to prevent an invalid class-index mapping."
+            )
+        _CACHE[key] = model
     return _CACHE[key]
 
 

@@ -110,6 +110,51 @@ def preprocess_calligraphy_image(
     return np.expand_dims(array, axis=0)
 
 
+def prepare_local_classifier_input(
+    image_path: str,
+    architecture: str = "efficientnetb0",
+    input_size: int = 224,
+    *,
+    return_diagnostics: bool = False,
+):
+    """Canonical, aspect-preserving local-classifier inference preprocessing."""
+    if not image_path or not os.path.isfile(image_path):
+        raise FileNotFoundError(f"Classifier input image not found: {image_path}")
+    size = int(input_size)
+    if size <= 0:
+        raise ValueError("input_size must be a positive integer")
+    with Image.open(image_path) as source:
+        source.load()
+        image = ImageOps.exif_transpose(source).convert("RGB")
+        processed = resize_with_padding(image, (size, size))
+    pixels = np.asarray(processed, dtype=np.float32)
+    transformed = np.asarray(
+        get_architecture_preprocess_fn(architecture)(pixels.copy()),
+        dtype=np.float32,
+    )
+    batch = np.expand_dims(transformed, axis=0)
+    if batch.shape != (1, size, size, 3):
+        raise ValueError(f"Invalid classifier input shape: {batch.shape}")
+    if not np.isfinite(batch).all():
+        raise ValueError("Classifier input contains NaN or infinity")
+    diagnostics = {
+        "shape": list(batch.shape),
+        "dtype": str(batch.dtype),
+        "min": float(batch.min()),
+        "max": float(batch.max()),
+        "mean": float(batch.mean()),
+        "std": float(batch.std()),
+        "preprocessing_mode": (
+            "efficientnet_internal_rescaling"
+            if (architecture or "").lower() == "efficientnetb0"
+            else f"{(architecture or 'efficientnetb0').lower()}_preprocess_input"
+        ),
+        "aspect_ratio_preserved": True,
+        "input_size": size,
+    }
+    return (batch, diagnostics) if return_diagnostics else batch
+
+
 def preprocess_for_model(
     image_path: str,
     architecture: str = "efficientnetb0",
@@ -120,7 +165,7 @@ def preprocess_for_model(
         return preprocess_external_keras_image(image_path)
     if preprocessing_mode == "manuscript":
         return preprocess_manuscript_image(image_path, architecture=architecture)
-    return preprocess_calligraphy_image(image_path, architecture=architecture)
+    return prepare_local_classifier_input(image_path, architecture=architecture)
 
 
 def preprocess_pil_image(image: Image.Image, target_size=(224, 224), fill=(255, 255, 255)) -> Image.Image:

@@ -9,6 +9,44 @@ from flask import current_app
 
 logger = logging.getLogger(__name__)
 
+CLASS_NAMES = ["naskhi", "diwani", "diwani_jali", "tsuluts"]
+
+
+def validate_production_mapping(
+    *,
+    class_indices: Dict[str, int],
+    num_model_outputs: int,
+    metadata_class_mapping: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate the immutable local production classifier output contract."""
+    expected_indices = {name: index for index, name in enumerate(CLASS_NAMES)}
+    errors: List[str] = []
+    normalized = {str(name): int(index) for name, index in (class_indices or {}).items()}
+    if int(num_model_outputs) != len(CLASS_NAMES):
+        errors.append(
+            f"model output size is {num_model_outputs}; expected {len(CLASS_NAMES)}"
+        )
+    if normalized != expected_indices:
+        errors.append(
+            f"class_indices must be exactly {expected_indices}; received {normalized}"
+        )
+    values = list(normalized.values())
+    if len(values) != len(set(values)) or sorted(values) != list(range(len(CLASS_NAMES))):
+        errors.append("class_indices must contain unique contiguous indexes 0..3")
+    if metadata_class_mapping is not None and list(metadata_class_mapping) != CLASS_NAMES:
+        errors.append(
+            f"metadata class_mapping must be exactly {CLASS_NAMES}; "
+            f"received {list(metadata_class_mapping)}"
+        )
+    if errors:
+        raise ValueError("Invalid production class mapping: " + "; ".join(errors))
+    return {
+        "valid": True,
+        "class_names": list(CLASS_NAMES),
+        "class_indices": expected_indices,
+        "num_model_outputs": int(num_model_outputs),
+    }
+
 
 def canonical_class_order(config=None) -> Dict[str, int]:
     if config is None:

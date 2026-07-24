@@ -1,0 +1,1181 @@
+diff --git a/PREDICTION_IMPROVEMENT_REPORT.md b/PREDICTION_IMPROVEMENT_REPORT.md
+new file mode 100644
+index 0000000..b9753c0
+--- /dev/null
++++ b/PREDICTION_IMPROVEMENT_REPORT.md
+@@ -0,0 +1,76 @@
++# Prediction Pipeline V2 — Improvement Report
++
++## Root causes confirmed
++
++1. An unavailable binary detector returned `is_khat=True` and probability `1.0`.
++2. The Stage 2 gate lowered its post-Stage-1 defaults to roughly 0.32 confidence
++   and 0.02 margin, then allowed confidence alone to short-circuit acceptance.
++3. Raw, fused, and best-single confidence/margin were combined with `max()`.
++4. The object named `raw_scores` was mutated by pair rules before being returned.
++5. Stage 2 called the content gate again instead of reusing the Stage 1 trace.
++6. Model output cardinality was not checked immediately after cached model load.
++7. Inference preprocessing existed in several variants and lacked numerical
++   diagnostics.
++
++## Changes
++
++- Added an immutable production class contract and strict mapping validator.
++- Added model output-shape validation at load time.
++- Added one aspect-preserving local classifier preprocessing function with EXIF
++  transpose, RGB conversion, float32/finite validation, and diagnostics.
++- Changed missing/failed binary detector output to uncertain with null
++  probabilities and mandatory manual review.
++- Added structured Stage 1 decision/evidence/feature fields while preserving all
++  legacy response keys.
++- Made raw classifier evidence authoritative for Stage 2; refinement remains
++  diagnostic/advisory.
++- Required both confidence and top-two margin; removed soft similarity salvage.
++- Preserved immutable `raw_model_scores` and exposed `refined_scores`.
++- Reused the Stage 1 trace in Stage 2 instead of recalculating the content gate.
++- Added explicit `confirmed_class`, `probable_class`, `uncertain_class`, and
++  `abstained` response diagnostics.
++- Added manifest audit and read-only exact/dHash leakage-report scripts.
++- Added tests for mapping, preprocessing, unavailable detector, hard rejection,
++  low-margin abstention, and non-max-merged scores.
++
++## Evaluation status
++
++No production-accuracy increase is claimed. The checkout has no local dataset
++split and the active model binary is disabled/missing; the host also lacks Flask,
++Pillow, NumPy, TensorFlow and pytest. Consequently:
++
++- Python syntax validation can be run and is reported separately.
++- Model/corpus metrics cannot be produced honestly on this host.
++- The leakage report has status `not_run_no_dataset_files`.
++- The real-image integration manifest test skips explicitly when fixtures are
++  unavailable.
++
++The previous stored test accuracy (75.36%) is historical metadata, not a V2 result.
++
++## Compatibility and risks
++
++Existing response keys remain. New abstention fields are additive. Records that
++previously received a low-margin class can now have no final class; callers must
++treat this as an intentional safety decision. Deploy first in shadow/audit mode
++if business workflow currently assumes every khat-like input receives a label.
++
++Strict mapping checks can expose old model bundles whose metadata is incomplete
++or whose output order differs. Such a failure is intentional and safer than
++silently assigning the wrong style.
++
++## Required validation on the model host
++
++```bash
++python -m pytest -q tests/test_khat_detector.py tests/test_prediction_pipeline_v2.py
++python -m pytest -q
++python scripts/audit_prediction_pipeline.py \
++  --manifest tests/fixtures/prediction_manifest.json \
++  --output model/prediction_audit
++python scripts/find_dataset_duplicates.py \
++  --dataset dataset \
++  --output model/dataset_leakage_report
++```
++
++Calibrate Stage 2 thresholds from the validation manifest, grouped by
++`source_group`; do not tune against the held-out test split.
++
+diff --git a/PREDICTION_PIPELINE_AUDIT.md b/PREDICTION_PIPELINE_AUDIT.md
+new file mode 100644
+index 0000000..a0f8204
+--- /dev/null
++++ b/PREDICTION_PIPELINE_AUDIT.md
+@@ -0,0 +1,85 @@
++# Prediction Pipeline Audit
++
++## Scope and baseline
++
++This audit describes the code on branch `server-stable-before-cursor` before the
++prediction-pipeline-v2 changes. The production contract is four local classifier
++outputs in this exact order:
++
++`naskhi`, `diwani`, `diwani_jali`, `tsuluts`.
++
++Syntax compilation passed before this work. The Python 3.14 host did not have the
++project dependencies installed, so the baseline test discovery stopped at import
++time (19 import errors; 4 dependency-free modules passed).
++
++## Actual request path
++
++1. `routes/classification_routes.py` validates the uploaded file, stores it, and
++   calls `prediction_service.predict_image`.
++2. The optional validation package checks file integrity/resolution, OCR/QR and
++   forbidden objects. Missing OCR/YOLO generally fails open to the heuristic gate.
++3. `detect_khat` calls `assess_calligraphy_content`.
++4. The content gate derives paper, saturation, edge, ink, scene, Haar-face/skin,
++   connected-component, baseline and Latin-template features.
++5. A hard Latin/photo decision blocks Stage 2, including when force-classify is
++   requested.
++6. If present, the binary khat/non-khat model receives a padded 224x224 image.
++   Before this change, an unavailable detector returned khat probability 1.0.
++7. `_classify_khat_type` selects Teachable Machine, one Keras classifier, or the
++   local/external ensemble.
++8. The four-class model emits probabilities. The local path can then apply
++   calibration, contested-pair rules, dataset pHash fusion, and shape priors.
++9. `refine_class_probabilities` temperature-softens and optionally blends dataset
++   similarity for display.
++10. The distribution/OOD validator may inspect an embedding and MSP.
++11. `_class_recognition_gate` decides whether to label or abstain.
++12. The route persists the returned decision, probabilities and diagnostics.
++
++## Stage audit
++
++| Stage | Input/output | Threshold/fallback | Principal risks |
++|---|---|---|---|
++| Upload | FileStorage → stored RGB image | extension, image verification, upload limit | decompression bombs and invalid content need bounded decoding |
++| Validation package | image → accepted/rejected trace | OCR/YOLO env thresholds; unavailable tools fail open | duplicate heuristic calls; false acceptance when optional tools are missing |
++| Content features | image → feature snapshot | numerous literal edge/paper/color/layout cutoffs | scattered thresholds; synthetic photo rules can overfit |
++| Script gate | features → Latin/Arabic evidence | template hits, cursive/baseline/layout evidence | decorative Latin and fragmented Arabic overlap |
++| Photo gate | features → photo evidence | Haar+skin, blob, scene/color evidence | grayscale people conflict with monochrome calligraphy |
++| Stage 1 combine | script+photo evidence → explicit status | hard Latin/photo; otherwise confirmed/likely/uncertain | old boolean response hid conflicting evidence |
++| Binary detector | 224x224 batch → khat probability | accept .70, borderline .65, reject .50 | old unavailable fallback asserted 1.0 certainty |
++| Mapping | output index → class slug | four unique contiguous indexes | external/local mappings could be silently mixed |
++| Preprocessing | image → `(1,224,224,3)` float32 | EXIF, RGB, trim/pad, architecture transform | external direct resize distorted aspect; architecture metadata can be wrong |
++| Four-class model | batch → raw scores | model softmax/calibration | confidence is not correctness; wrong mapping is catastrophic |
++| Ensemble | component scores → fused raw scores | configurable local/external weights | “best single” confidence was later max-merged |
++| Alignment | raw scores + pHash → fused scores | weak-model and similarity thresholds | pHash can flip style due to border/layout, not calligraphic identity |
++| Refinement | fused scores → display scores | temperature 2.5, similarity blend .35 | display distribution can conceal raw uncertainty |
++| Stage 2 | raw/refined evidence → class/abstain | formerly ~.35 confidence and ~.02 margin after Stage 1 | low-margin labels; `max()` across sources inflated acceptance |
++| Persistence | result → relational rows/audit | broad exception fallbacks | diagnostics may be lost while prediction still succeeds |
++
++## Conflicts found
++
++- `STAGE2_MIN_CONFIDENCE_AFTER_STAGE1=0.32` and margin `0.02` conflict with
++  the global .70/.05 gate and allow near-ties.
++- `_class_recognition_gate` used the maximum of fused, raw and best-single
++  confidence/margin instead of evaluating one declared source.
++- Stage 2 called `assess_calligraphy_content` again although Stage 1 had already
++  produced the result.
++- pair correction and shape/similarity fusion mutated the variable called
++  `raw_scores`; the true model output was no longer preserved.
++- local, external and Teachable Machine mappings were resolved through shared
++  metadata paths. A model-specific mapping must be validated before inference.
++- EfficientNetB0 in modern Keras includes rescaling internally; its
++  `preprocess_input` is a pass-through. External TM-style H5 expects `[-1,1]`.
++  Architecture selection therefore has to be explicit and diagnosed.
++
++## Decision policy
++
++- Hard evidence for Latin/photo/non-script produces `rejected_input`.
++- Missing binary detector is `uncertain`, never probability 1.0.
++- Raw classifier scores remain immutable and primary.
++- Refined/similarity scores are advisory and cannot force a conflicting class.
++- Confidence and top-two margin are tested separately.
++- Insufficient evidence yields `uncertain_class`, `abstained=true`, and no final
++  class. Existing response keys remain present for template/database compatibility.
++- Threshold defaults are conservative configuration values and must be calibrated
++  on a source-grouped validation manifest before being described as optimal.
++
+diff --git a/config.py b/config.py
+index 35216cf..a6969a0 100644
+--- a/config.py
++++ b/config.py
+@@ -193,8 +193,10 @@ class Config:
+         os.getenv("STAGE2_MIN_CONFIDENCE_AFTER_STAGE1", "0.32")
+     )
+     STAGE2_MIN_MARGIN_AFTER_STAGE1 = float(
+-        os.getenv("STAGE2_MIN_MARGIN_AFTER_STAGE1", "0.02")
++        os.getenv("STAGE2_MIN_MARGIN_AFTER_STAGE1", "0.10")
+     )    # Minimum visual similarity (%) to training images for acceptance.
++    STAGE2_PROBABLE_CONFIDENCE = float(os.getenv("STAGE2_PROBABLE_CONFIDENCE", "0.55"))
++    STAGE2_PROBABLE_MARGIN = float(os.getenv("STAGE2_PROBABLE_MARGIN", "0.10"))
+     STAGE2_MIN_DATASET_SIMILARITY = float(os.getenv("STAGE2_MIN_DATASET_SIMILARITY", "55"))
+     STAGE2_MIN_CLASS_SIMILARITY = float(os.getenv("STAGE2_MIN_CLASS_SIMILARITY", "60"))
+     # Soften displayed/inference probabilities toward visual similarity across classes.
+diff --git a/model/dataset_leakage_report.json b/model/dataset_leakage_report.json
+new file mode 100644
+index 0000000..6391c67
+--- /dev/null
++++ b/model/dataset_leakage_report.json
+@@ -0,0 +1,13 @@
++{
++  "generated_at": "2026-07-24T20:10:19.007858+00:00",
++  "dataset_root": "dataset",
++  "files_scanned": 0,
++  "dhash_distance_threshold": 4,
++  "exact_duplicate_groups": [],
++  "perceptual_duplicate_pairs": [],
++  "cross_split_exact_leakage": [],
++  "cross_split_perceptual_leakage": [],
++  "safe_to_use_test_metrics": false,
++  "status": "not_run_no_dataset_files",
++  "mutated_files": false
++}
+\ No newline at end of file
+diff --git a/model/dataset_leakage_report.md b/model/dataset_leakage_report.md
+new file mode 100644
+index 0000000..2ce1765
+--- /dev/null
++++ b/model/dataset_leakage_report.md
+@@ -0,0 +1,9 @@
++# Dataset Leakage Report
++
++- Status: not_run_no_dataset_files
++- Files scanned: 0
++- Exact cross-split groups: 0
++- Near-duplicate cross-split pairs: 0
++- Test metrics safe from detected leakage: False
++
++No file was moved or deleted.
+diff --git a/scripts/audit_prediction_pipeline.py b/scripts/audit_prediction_pipeline.py
+new file mode 100644
+index 0000000..ac9319a
+--- /dev/null
++++ b/scripts/audit_prediction_pipeline.py
+@@ -0,0 +1,166 @@
++#!/usr/bin/env python3
++"""Manifest-driven, abstention-aware prediction audit."""
++
++from __future__ import annotations
++
++import argparse
++import csv
++import json
++import sys
++import time
++from collections import Counter
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++CLASS_NAMES = ["naskhi", "diwani", "diwani_jali", "tsuluts"]
++REQUIRED_FIELDS = {
++    "path", "expected_content", "expected_class", "stage1_decision", "stage1_reason",
++    "stage1_features", "binary_detector", "raw_model_scores", "refined_scores",
++    "top1", "top2", "margin", "dataset_similarity", "final_status", "final_class",
++    "processing_time_ms", "exception",
++}
++
++
++def _safe(value):
++    return json.dumps(value, ensure_ascii=False, sort_keys=True) if isinstance(value, (dict, list)) else value
++
++
++def _metrics(records):
++    khat = [r for r in records if r["expected_content"] == "khat"]
++    non = [r for r in records if r["expected_content"] != "khat"]
++    accepted = [r for r in records if r["final_class"]]
++    correct = [r for r in accepted if r["final_class"] == r["expected_class"]]
++    false_accept = [r for r in non if r["final_class"]]
++    false_reject = [r for r in khat if r["final_status"] == "rejected_input"]
++    per_class = {}
++    f1s, recalls = [], []
++    for label in CLASS_NAMES:
++        tp = sum(r["expected_class"] == label and r["final_class"] == label for r in records)
++        fp = sum(r["expected_class"] != label and r["final_class"] == label for r in records)
++        fn = sum(r["expected_class"] == label and r["final_class"] != label for r in records)
++        precision = tp / (tp + fp) if tp + fp else 0.0
++        recall = tp / (tp + fn) if tp + fn else 0.0
++        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
++        per_class[label] = {"precision": precision, "recall": recall, "f1": f1, "support": tp + fn}
++        f1s.append(f1)
++        recalls.append(recall)
++    return {
++        "samples": len(records),
++        "coverage": len(accepted) / len(records) if records else 0.0,
++        "selective_accuracy": len(correct) / len(accepted) if accepted else None,
++        "uncertain": sum(r["final_status"] == "uncertain_class" for r in records),
++        "false_acceptance_rate": len(false_accept) / len(non) if non else None,
++        "false_rejection_rate": len(false_reject) / len(khat) if khat else None,
++        "macro_f1": sum(f1s) / len(f1s),
++        "balanced_accuracy": sum(recalls) / len(recalls),
++        "per_class": per_class,
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--manifest", required=True)
++    parser.add_argument("--output", default="model/prediction_audit")
++    args = parser.parse_args()
++    manifest_path = Path(args.manifest)
++    output = Path(args.output)
++    output.mkdir(parents=True, exist_ok=True)
++    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
++
++    from app import create_app
++    from services.prediction_service import predict_image
++
++    app = create_app()
++    records = []
++    with app.app_context():
++        for item in manifest:
++            started = time.perf_counter()
++            record = {
++                "path": item.get("path"), "expected_content": item.get("expected_content"),
++                "expected_class": item.get("expected_class"), "source_group": item.get("source_group"),
++                "exception": None,
++            }
++            try:
++                result = predict_image(str((manifest_path.parent / item["path"]).resolve()))
++                stage1 = result.get("stage1_trace") or {}
++                raw = result.get("raw_model_scores") or {}
++                refined = result.get("refined_scores") or result.get("scores") or {}
++                ordered = sorted(raw.items(), key=lambda pair: pair[1], reverse=True)
++                record.update({
++                    "stage1_decision": stage1.get("decision_code") or result.get("detection_status"),
++                    "stage1_reason": stage1.get("decision_reason") or result.get("stage1_message"),
++                    "stage1_features": stage1.get("feature_snapshot") or {},
++                    "binary_detector": {
++                        "available": result.get("detector_available"),
++                        "khat_probability": result.get("khat_probability"),
++                        "non_khat_probability": result.get("non_khat_probability"),
++                    },
++                    "raw_model_scores": raw, "refined_scores": refined,
++                    "top1": ordered[0] if ordered else None,
++                    "top2": ordered[1] if len(ordered) > 1 else None,
++                    "margin": result.get("top2_margin_pct"),
++                    "dataset_similarity": result.get("similarity_scores"),
++                    "final_status": result.get("final_status") or (
++                        "rejected_input" if result.get("input_status") == "non_khat" else "uncertain_class"
++                    ),
++                    "final_class": result.get("final_class") or result.get("predicted_class"),
++                })
++            except Exception as exc:
++                record.update({key: None for key in REQUIRED_FIELDS - record.keys()})
++                record["final_status"] = "error"
++                record["exception"] = f"{type(exc).__name__}: {exc}"
++            record["processing_time_ms"] = round((time.perf_counter() - started) * 1000, 2)
++            records.append(record)
++
++    metrics = _metrics(records)
++    (output / "predictions.jsonl").write_text(
++        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in records), encoding="utf-8"
++    )
++    fields = sorted(set().union(*(r.keys() for r in records)))
++    with (output / "predictions.csv").open("w", newline="", encoding="utf-8") as handle:
++        writer = csv.DictWriter(handle, fieldnames=fields)
++        writer.writeheader()
++        writer.writerows({key: _safe(row.get(key)) for key in fields} for row in records)
++    (output / "per_class_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
++    (output / "calibration_candidates.json").write_text(
++        json.dumps({"status": "requires validation corpus", "records": len(records)}, indent=2),
++        encoding="utf-8",
++    )
++    for name, predicate in {
++        "errors_false_accept.csv": lambda r: r["expected_content"] != "khat" and r["final_class"],
++        "errors_false_reject.csv": lambda r: r["expected_content"] == "khat" and r["final_status"] == "rejected_input",
++        "errors_wrong_class.csv": lambda r: r["final_class"] and r["final_class"] != r["expected_class"],
++    }.items():
++        subset = [r for r in records if predicate(r)]
++        with (output / name).open("w", newline="", encoding="utf-8") as handle:
++            writer = csv.DictWriter(handle, fieldnames=fields)
++            writer.writeheader()
++            writer.writerows({key: _safe(row.get(key)) for key in fields} for row in subset)
++    # Portable matrix tables without adding sklearn.
++    for filename, expected_key, predicted_key, labels in (
++        ("stage1_confusion_matrix.csv", "expected_content", "stage1_decision",
++         sorted({str(r["expected_content"]) for r in records} | {str(r["stage1_decision"]) for r in records})),
++        ("stage2_confusion_matrix.csv", "expected_class", "final_class", CLASS_NAMES + ["None"]),
++    ):
++        with (output / filename).open("w", newline="", encoding="utf-8") as handle:
++            writer = csv.writer(handle); writer.writerow(["expected/predicted", *labels])
++            for expected in labels:
++                writer.writerow([expected, *[
++                    sum(str(r.get(expected_key)) == expected and str(r.get(predicted_key)) == predicted for r in records)
++                    for predicted in labels
++                ]])
++    (output / "summary.md").write_text(
++        "# Prediction Audit\n\n"
++        f"- Samples: {metrics['samples']}\n- Coverage: {metrics['coverage']:.4f}\n"
++        f"- Selective accuracy: {metrics['selective_accuracy']}\n"
++        f"- Macro F1: {metrics['macro_f1']:.4f}\n"
++        f"- Balanced accuracy: {metrics['balanced_accuracy']:.4f}\n"
++        f"- Uncertain: {metrics['uncertain']}\n", encoding="utf-8"
++    )
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/scripts/find_dataset_duplicates.py b/scripts/find_dataset_duplicates.py
+new file mode 100644
+index 0000000..219dae4
+--- /dev/null
++++ b/scripts/find_dataset_duplicates.py
+@@ -0,0 +1,110 @@
++#!/usr/bin/env python3
++"""Report exact and perceptual duplicates across dataset splits; never mutates by default."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++from collections import defaultdict
++from datetime import datetime, timezone
++from pathlib import Path
++
++EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(chunk)
++    return digest.hexdigest()
++
++
++def dhash(path: Path) -> str:
++    from PIL import Image, ImageOps
++
++    with Image.open(path) as image:
++        gray = ImageOps.grayscale(ImageOps.exif_transpose(image))
++        pixels = list(gray.resize((9, 8), Image.Resampling.LANCZOS).getdata())
++    bits = [pixels[y * 9 + x] > pixels[y * 9 + x + 1] for y in range(8) for x in range(8)]
++    return f"{sum(int(bit) << index for index, bit in enumerate(bits)):016x}"
++
++
++def distance(left: str, right: str) -> int:
++    return (int(left, 16) ^ int(right, 16)).bit_count()
++
++
++def build_report(dataset: Path, threshold: int = 4) -> dict:
++    rows = []
++    for split in ("train", "validation", "test"):
++        root = dataset / split
++        if not root.is_dir():
++            continue
++        for path in root.rglob("*"):
++            if path.is_file() and path.suffix.lower() in EXTENSIONS:
++                try:
++                    rows.append(
++                        {"path": str(path), "split": split, "sha256": sha256(path), "dhash": dhash(path)}
++                    )
++                except (OSError, ValueError):
++                    continue
++    exact = defaultdict(list)
++    for row in rows:
++        exact[row["sha256"]].append(row)
++    exact_groups = [group for group in exact.values() if len(group) > 1]
++    perceptual = []
++    for index, left in enumerate(rows):
++        for right in rows[index + 1 :]:
++            if left["sha256"] == right["sha256"]:
++                continue
++            dist = distance(left["dhash"], right["dhash"])
++            if dist <= threshold:
++                perceptual.append({"left": left, "right": right, "distance": dist})
++    leakage_exact = [g for g in exact_groups if len({r["split"] for r in g}) > 1]
++    leakage_near = [
++        pair for pair in perceptual if pair["left"]["split"] != pair["right"]["split"]
++    ]
++    return {
++        "generated_at": datetime.now(timezone.utc).isoformat(),
++        "dataset_root": str(dataset),
++        "files_scanned": len(rows),
++        "dhash_distance_threshold": threshold,
++        "exact_duplicate_groups": exact_groups,
++        "perceptual_duplicate_pairs": perceptual,
++        "cross_split_exact_leakage": leakage_exact,
++        "cross_split_perceptual_leakage": leakage_near,
++        "safe_to_use_test_metrics": bool(rows) and not leakage_exact and not leakage_near,
++        "status": "complete" if rows else "not_run_no_dataset_files",
++        "mutated_files": False,
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--dataset", default="dataset")
++    parser.add_argument("--output", default="model/dataset_leakage_report")
++    parser.add_argument("--distance", type=int, default=4)
++    parser.add_argument("--apply", action="store_true")
++    args = parser.parse_args()
++    if args.apply:
++        raise SystemExit("--apply is intentionally unsupported until a reviewed move policy is supplied")
++    report = build_report(Path(args.dataset), args.distance)
++    output = Path(args.output)
++    output.parent.mkdir(parents=True, exist_ok=True)
++    output.with_suffix(".json").write_text(json.dumps(report, indent=2), encoding="utf-8")
++    summary = (
++        "# Dataset Leakage Report\n\n"
++        f"- Status: {report['status']}\n"
++        f"- Files scanned: {report['files_scanned']}\n"
++        f"- Exact cross-split groups: {len(report['cross_split_exact_leakage'])}\n"
++        f"- Near-duplicate cross-split pairs: {len(report['cross_split_perceptual_leakage'])}\n"
++        f"- Test metrics safe from detected leakage: {report['safe_to_use_test_metrics']}\n"
++        "\nNo file was moved or deleted.\n"
++    )
++    output.with_suffix(".md").write_text(summary, encoding="utf-8")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/services/class_mapping_service.py b/services/class_mapping_service.py
+index 2a94288..106bf3a 100644
+--- a/services/class_mapping_service.py
++++ b/services/class_mapping_service.py
+@@ -9,6 +9,44 @@ from flask import current_app
+ 
+ logger = logging.getLogger(__name__)
+ 
++CLASS_NAMES = ["naskhi", "diwani", "diwani_jali", "tsuluts"]
++
++
++def validate_production_mapping(
++    *,
++    class_indices: Dict[str, int],
++    num_model_outputs: int,
++    metadata_class_mapping: Optional[List[str]] = None,
++) -> Dict[str, Any]:
++    """Validate the immutable local production classifier output contract."""
++    expected_indices = {name: index for index, name in enumerate(CLASS_NAMES)}
++    errors: List[str] = []
++    normalized = {str(name): int(index) for name, index in (class_indices or {}).items()}
++    if int(num_model_outputs) != len(CLASS_NAMES):
++        errors.append(
++            f"model output size is {num_model_outputs}; expected {len(CLASS_NAMES)}"
++        )
++    if normalized != expected_indices:
++        errors.append(
++            f"class_indices must be exactly {expected_indices}; received {normalized}"
++        )
++    values = list(normalized.values())
++    if len(values) != len(set(values)) or sorted(values) != list(range(len(CLASS_NAMES))):
++        errors.append("class_indices must contain unique contiguous indexes 0..3")
++    if metadata_class_mapping is not None and list(metadata_class_mapping) != CLASS_NAMES:
++        errors.append(
++            f"metadata class_mapping must be exactly {CLASS_NAMES}; "
++            f"received {list(metadata_class_mapping)}"
++        )
++    if errors:
++        raise ValueError("Invalid production class mapping: " + "; ".join(errors))
++    return {
++        "valid": True,
++        "class_names": list(CLASS_NAMES),
++        "class_indices": expected_indices,
++        "num_model_outputs": int(num_model_outputs),
++    }
++
+ 
+ def canonical_class_order(config=None) -> Dict[str, int]:
+     if config is None:
+diff --git a/services/khat_detector_service.py b/services/khat_detector_service.py
+index fe55956..0a3865b 100644
+--- a/services/khat_detector_service.py
++++ b/services/khat_detector_service.py
+@@ -1132,6 +1132,30 @@ def assess_calligraphy_content(image_path: str) -> Dict:
+         reason = "Gambar bukan merupakan tulisan Arab."
+     elif is_latin:
+         reason = "Input bukan merupakan tulisan Arab."
++    if is_latin:
++        decision_code = "rejected_latin"
++    elif is_photographic:
++        decision_code = "rejected_photo"
++    elif looks_like_calligraphy and dense_arabic_page:
++        decision_code = "confirmed_khat_content"
++    elif looks_like_calligraphy:
++        decision_code = "likely_khat_content"
++    else:
++        decision_code = "uncertain_content"
++    evidence_for = []
++    evidence_against = []
++    if looks_like_ink_on_paper:
++        evidence_for.append("ink_on_paper")
++    if looks_like_light_ink_on_dark:
++        evidence_for.append("light_ink_on_dark")
++    if dense_arabic_page:
++        evidence_for.append("dense_arabic_page")
++    if arabic_cursive >= 0.35:
++        evidence_for.append("arabic_cursive_structure")
++    if is_latin:
++        evidence_against.append("latin_script_evidence")
++    if is_photographic:
++        evidence_against.append("photographic_scene_evidence")
+     return {
+         "looks_like_calligraphy": not is_non_khat,
+         "is_photographic_non_khat": is_photographic,
+@@ -1145,6 +1169,22 @@ def assess_calligraphy_content(image_path: str) -> Dict:
+         "scene_scores": scene_scores,
+         "latin_gate": latin_gate,
+         "rejection_reason": reason,
++        "decision_code": decision_code,
++        "decision_reason": reason or latin_gate.get("decision_reason") or decision_code,
++        "evidence_for_khat": evidence_for,
++        "evidence_against_khat": evidence_against,
++        "triggered_rules": evidence_for + evidence_against,
++        "feature_snapshot": {
++            "paper_ratio": round(paper_ratio, 4),
++            "midtone_ratio": round(midtone_ratio, 4),
++            "edge_ratio": round(edge_ratio, 4),
++            "mean_saturation": round(mean_saturation, 4),
++            "arabic_cursive_score": round(arabic_cursive, 4),
++            "arabic_baseline_score": round(arabic_baseline, 4),
++            "latin_template_hits": latin_hits,
++            "raw_face_hits": int((human_gate or {}).get("raw_faces") or 0),
++            "skin_validated_faces": int((human_gate or {}).get("faces") or 0),
++        },
+     }
+ 
+ 
+@@ -1751,11 +1791,11 @@ def detect_khat(image_path: str, config=None, force_classify: bool = False) -> D
+         # No trained detector: content gate already passed; Stage 2 must still be strict.
+         return {
+             "detector_available": False,
+-            "is_khat": True,
+-            "khat_probability": 1.0,
+-            "non_khat_probability": 0.0,
+-            "input_status": "khat",
+-            "detection_status": "moderate_khat",
++            "is_khat": False,
++            "khat_probability": None,
++            "non_khat_probability": None,
++            "input_status": "uncertain",
++            "detection_status": "detector_unavailable",
+             "detection_decision": "continue_caution",
+             "manual_review_required": True,
+             "stage2_allowed": True,
+@@ -1778,11 +1818,11 @@ def detect_khat(image_path: str, config=None, force_classify: bool = False) -> D
+     except (ValueError, OSError, MemoryError):
+         return {
+             "detector_available": False,
+-            "is_khat": True,
+-            "khat_probability": 1.0,
+-            "non_khat_probability": 0.0,
+-            "input_status": "khat",
+-            "detection_status": "moderate_khat",
++            "is_khat": False,
++            "khat_probability": None,
++            "non_khat_probability": None,
++            "input_status": "uncertain",
++            "detection_status": "detector_unavailable",
+             "detection_decision": "continue_caution",
+             "manual_review_required": True,
+             "stage2_allowed": True,
+diff --git a/services/model_cache_service.py b/services/model_cache_service.py
+index 6d409c6..79fd200 100644
+--- a/services/model_cache_service.py
++++ b/services/model_cache_service.py
+@@ -16,7 +16,17 @@ def get_cached_classifier(model_path: str, architecture: str, num_classes: int):
+     if key not in _CACHE:
+         from services.model_builder_service import load_trained_classifier
+ 
+-        _CACHE[key] = load_trained_classifier(model_path, architecture, num_classes)
++        model = load_trained_classifier(model_path, architecture, num_classes)
++        output_shape = getattr(model, "output_shape", None)
++        if isinstance(output_shape, list):
++            output_shape = output_shape[0]
++        actual_outputs = int(output_shape[-1]) if output_shape and output_shape[-1] else None
++        if actual_outputs is not None and actual_outputs != int(num_classes):
++            raise ValueError(
++                f"Model output size is {actual_outputs}; expected {num_classes}. "
++                "Prediction stopped to prevent an invalid class-index mapping."
++            )
++        _CACHE[key] = model
+     return _CACHE[key]
+ 
+ 
+diff --git a/services/prediction_service.py b/services/prediction_service.py
+index a851285..5a95589 100644
+--- a/services/prediction_service.py
++++ b/services/prediction_service.py
+@@ -118,6 +118,7 @@ def _class_recognition_gate(
+     image_path: Optional[str] = None,
+     config=None,
+     stage1_confirmed: bool = False,
++    stage1_content: Optional[Dict] = None,
+ ) -> Optional[Dict]:
+     """Return rejection metadata when the image should not receive a class label.
+ 
+@@ -166,28 +167,21 @@ def _class_recognition_gate(
+     else:
+         conf_pct = float(sorted_probs[0]["percent"]) if sorted_probs else 0.0
+ 
+-    # Prefer the stronger of fused vs raw model scores so similarity blending cannot
+-    # hide a clear stroke match to one of the 4 trained classes.
++    # Raw model evidence is authoritative. Never max-merge confidence from
++    # refinement, fusion, similarity, or another component.
+     if pred_class and raw_scores:
+-        raw_conf_pct = float(raw_scores.get(pred_class, 0)) * 100
+-        raw_margin_pct = _margin_from_scores(raw_scores, pred_class)
+-        conf_pct = max(conf_pct, raw_conf_pct)
+-        margin_pct = max(margin_pct, raw_margin_pct)
+-    best_single = type_result.get("best_single_confidence")
+-    if best_single is not None:
+-        best_pct = float(best_single) * 100 if float(best_single) <= 1 else float(best_single)
+-        conf_pct = max(conf_pct, best_pct)
++        raw_pred = max(raw_scores, key=raw_scores.get)
++        pred_class = raw_pred
++        conf_pct = float(raw_scores[raw_pred]) * 100
++        margin_pct = _margin_from_scores(raw_scores, raw_pred)
+ 
+     reasons = []
+-    similarity_failed = False
+     rejection_code = REJECTION_OUTSIDE_CLASSES
+ 
+     # Safety net: Latin / photographic content must never receive a class label.
+-    if image_path:
++    if image_path and stage1_content:
+         try:
+-            from services.khat_detector_service import assess_calligraphy_content
+-
+-            content = assess_calligraphy_content(image_path)
++            content = stage1_content
+             if content.get("is_latin_script_non_khat"):
+                 payload = build_unrecognized_payload(
+                     display_list=display_list,
+@@ -239,54 +233,23 @@ def _class_recognition_gate(
+         reasons.append(reason_invalid_class(display_list))
+         rejection_code = REJECTION_OUTSIDE_CLASSES
+     else:
+-        # After Stage 1, accept any of the 4 trained classes once confidence clears the soft floor.
+-        if stage1_confirmed and pred_class in class_labels and conf_pct >= min_conf_pct:
++        if (
++            stage1_confirmed
++            and pred_class in class_labels
++            and conf_pct >= min_conf_pct
++            and margin_pct >= min_margin_pct
++        ):
+             return None
+         if conf_pct < min_conf_pct:
+             reasons.append(reason_low_confidence(conf_pct, min_conf_pct))
+             rejection_code = REJECTION_LOW_SIMILARITY
+-        # Margin is only a hard block on the standalone (no Stage-1) path.
+-        if (not stage1_confirmed) and margin_pct < min_margin_pct:
++        if margin_pct < min_margin_pct:
+             reasons.append(reason_low_margin(margin_pct, min_margin_pct))
+             rejection_code = REJECTION_LOW_SIMILARITY
+ 
+     if not reasons:
+         return None
+ 
+-    # Soft salvage: Stage-1-confirmed Arabic + valid 4-class prediction with
+-    # near-threshold confidence, or visual fit to training samples.
+-    soft_floor = min_conf_pct * 0.85 if stage1_confirmed else min_conf_pct
+-    if (
+-        stage1_confirmed
+-        and pred_class in class_labels
+-        and conf_pct >= soft_floor
+-        and rejection_code == REJECTION_LOW_SIMILARITY
+-    ):
+-        return None
+-
+-    if (
+-        not similarity_failed
+-        and image_path
+-        and pred_class
+-        and pred_class in class_labels
+-        and conf_pct >= max(soft_floor, 40.0)
+-    ):
+-        try:
+-            fit = check_trained_class_fit(
+-                image_path,
+-                pred_class,
+-                config,
+-                trained_classes=class_labels,
+-                model_confidence_pct=conf_pct,
+-                strict=False,
+-            )
+-            if fit.get("available") and fit.get("fits"):
+-                return None
+-        except Exception as exc:
+-            if isinstance(exc, ValueError) and not should_treat_as_unrecognized(exc):
+-                raise
+-            pass
+-
+     payload = build_unrecognized_payload(
+         display_list=display_list,
+         reasons=reasons,
+@@ -309,6 +272,10 @@ def _class_recognition_gate(
+         "status_label": payload["status_label"],
+         "reliability": "Rejected",
+         "stage2_rejected": True,
++        "final_status": "uncertain_class",
++        "final_class": None,
++        "abstained": True,
++        "decision_reason": "; ".join(reasons),
+         "trained_classes": class_labels,
+         "scores": None,
+         "probabilities": None,
+@@ -324,16 +291,27 @@ def _apply_class_recognition_gate(
+     image_path: Optional[str] = None,
+     config=None,
+     stage1_confirmed: bool = False,
++    stage1_content: Optional[Dict] = None,
+ ) -> Dict:
++    evaluated = dict(type_result)
++    raw_scores = evaluated.get("raw_model_scores") or {}
++    if raw_scores:
++        raw_pred = max(raw_scores, key=raw_scores.get)
++        evaluated["predicted_class"] = raw_pred
++        evaluated["confidence"] = float(raw_scores[raw_pred])
++        evaluated["gate_confidence"] = float(raw_scores[raw_pred])
++        evaluated["top2_margin_pct"] = _margin_from_scores(raw_scores, raw_pred)
++        evaluated["top2_margin"] = evaluated["top2_margin_pct"] / 100.0
+     rejection = _class_recognition_gate(
+-        type_result,
++        evaluated,
+         image_path=image_path,
+         config=config,
+         stage1_confirmed=stage1_confirmed,
++        stage1_content=stage1_content,
+     )
+     if rejection is None:
+-        return type_result
+-    return {**type_result, **rejection}
++        return evaluated
++    return {**evaluated, **rejection}
+ 
+ 
+ def _reliability_label(confidence_pct: float, margin_pct: float) -> str:
+@@ -419,6 +397,8 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
+         ensemble_used = bool(ensemble.get("ensemble_used"))
+         model_source = ensemble.get("model_source") or "ensemble"
+         best_single_confidence = float(ensemble.get("best_single_confidence") or 0.0)
++        active_mapping = dict(ensemble.get("class_indices") or {})
++        preprocessing_diagnostics = None
+     else:
+         class_indices = resolve_model_class_indices(current_app.config)
+         if not class_indices:
+@@ -436,16 +416,48 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
+         from services.model_cache_service import get_cached_classifier
+ 
+         model = get_cached_classifier(model_path, architecture, len(class_labels))
++        if architecture == "efficientnetb0":
++            from services.class_mapping_service import validate_production_mapping
++
++            metadata_mapping = None
++            best_meta_path = current_app.config.get("BEST_MODEL_METADATA_PATH")
++            if best_meta_path and os.path.isfile(best_meta_path):
++                try:
++                    with open(best_meta_path, "r", encoding="utf-8") as handle:
++                        best_meta = json.load(handle)
++                    metadata_mapping = best_meta.get("class_mapping")
++                except (OSError, json.JSONDecodeError):
++                    metadata_mapping = None
++            validate_production_mapping(
++                class_indices=class_indices,
++                num_model_outputs=int(model.output_shape[-1]),
++                metadata_class_mapping=metadata_mapping,
++            )
+         inv_map = _invert_class_indices(class_indices) if class_indices else {
+             index: label for index, label in enumerate(class_labels)
+         }
++        active_mapping = dict(class_indices)
++        preprocessing_diagnostics = None
+ 
+         if use_tta:
+             batches = _tta_variants(image_path, architecture, preprocessing_mode=preprocessing_mode)
+             probs_list = [model.predict(batch, verbose=0)[0] for batch in batches]
+             probs = np.mean(probs_list, axis=0)
+         else:
+-            batch = preprocess_for_model(image_path, architecture=architecture, preprocessing_mode=preprocessing_mode)
++            if preprocessing_mode == "standard" and architecture != "keras_h5":
++                from services.preprocessing_service import prepare_local_classifier_input
++
++                batch, preprocessing_diagnostics = prepare_local_classifier_input(
++                    image_path,
++                    architecture=architecture,
++                    return_diagnostics=True,
++                )
++            else:
++                batch = preprocess_for_model(
++                    image_path,
++                    architecture=architecture,
++                    preprocessing_mode=preprocessing_mode,
++                )
+             probs = model.predict(batch, verbose=0)[0]
+ 
+         from services.calibration_service import load_calibrator, apply_calibrator
+@@ -481,6 +493,7 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
+         model_source = "external" if current_app.config.get("USE_EXTERNAL_MODEL") else "local"
+         best_single_confidence = gate_confidence or 0.0
+ 
++    immutable_raw_scores = dict(raw_scores)
+     from services.diwani_pair_service import apply_contested_style_pairs
+ 
+     # Contested-pair only: Diwani ↔ Diwani Jali, then Diwani Jali ↔ Tsuluts.
+@@ -580,7 +593,9 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
+         "confidence": gate_confidence,
+         "gate_confidence": gate_confidence,
+         "gate_scores": fused_scores,
+-        "raw_model_scores": raw_scores,
++        "raw_model_scores": immutable_raw_scores,
++        "refined_scores": display_scores,
++        "refined_top2_margin_pct": margin,
+         "dataset_aligned": bool(alignment.get("dataset_aligned")),
+         "ensemble_used": ensemble_used,
+         "best_single_confidence": best_single_confidence if ensemble_used else None,
+@@ -593,9 +608,20 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
+         "top2_margin_pct": gate_margin,
+         "gate_top2_margin_pct": gate_margin,
+         "display_top2_margin_pct": margin,
+-        "reliability": _reliability_label(gate_margin, gate_margin),
++        "reliability": _reliability_label(gate_confidence * 100, gate_margin),
+         "model_path": model_path,
+         "model_source_key": model_source,
++        "model_diagnostics": {
++            "class_mapping": active_mapping,
++            "model_path": model_path,
++            "preprocessing": preprocessing_diagnostics,
++            "raw_top1": max(immutable_raw_scores, key=immutable_raw_scores.get)
++            if immutable_raw_scores else None,
++            "raw_top2_margin_pct": _margin_from_scores(
++                immutable_raw_scores,
++                max(immutable_raw_scores, key=immutable_raw_scores.get),
++            ) if immutable_raw_scores else None,
++        },
+     }
+ 
+ 
+@@ -827,6 +853,7 @@ def predict_image(
+         type_result,
+         image_path=image_path,
+         stage1_confirmed=True,
++        stage1_content=detection.get("content_gate") or {},
+     )
+     if type_result.get("input_status") in ("unrecognized", "non_khat"):
+         return {
+@@ -869,4 +896,9 @@ def predict_image(
+         "model_architecture": type_result.get("model_architecture") or _resolve_architecture(),
+         "stage2_message": stage2_message,
+         "message": reliability,
++        "final_status": "confirmed_class" if reliability == "Strong Prediction" else "probable_class",
++        "final_class": type_result.get("predicted_class"),
++        "abstained": False,
++        "decision_reason": "raw confidence and top-two margin passed Stage 2",
++        "stage1_trace": detection.get("content_gate"),
+     }
+diff --git a/services/preprocessing_service.py b/services/preprocessing_service.py
+index b911534..93ced9e 100644
+--- a/services/preprocessing_service.py
++++ b/services/preprocessing_service.py
+@@ -110,6 +110,51 @@ def preprocess_calligraphy_image(
+     return np.expand_dims(array, axis=0)
+ 
+ 
++def prepare_local_classifier_input(
++    image_path: str,
++    architecture: str = "efficientnetb0",
++    input_size: int = 224,
++    *,
++    return_diagnostics: bool = False,
++):
++    """Canonical, aspect-preserving local-classifier inference preprocessing."""
++    if not image_path or not os.path.isfile(image_path):
++        raise FileNotFoundError(f"Classifier input image not found: {image_path}")
++    size = int(input_size)
++    if size <= 0:
++        raise ValueError("input_size must be a positive integer")
++    with Image.open(image_path) as source:
++        source.load()
++        image = ImageOps.exif_transpose(source).convert("RGB")
++        processed = resize_with_padding(image, (size, size))
++    pixels = np.asarray(processed, dtype=np.float32)
++    transformed = np.asarray(
++        get_architecture_preprocess_fn(architecture)(pixels.copy()),
++        dtype=np.float32,
++    )
++    batch = np.expand_dims(transformed, axis=0)
++    if batch.shape != (1, size, size, 3):
++        raise ValueError(f"Invalid classifier input shape: {batch.shape}")
++    if not np.isfinite(batch).all():
++        raise ValueError("Classifier input contains NaN or infinity")
++    diagnostics = {
++        "shape": list(batch.shape),
++        "dtype": str(batch.dtype),
++        "min": float(batch.min()),
++        "max": float(batch.max()),
++        "mean": float(batch.mean()),
++        "std": float(batch.std()),
++        "preprocessing_mode": (
++            "efficientnet_internal_rescaling"
++            if (architecture or "").lower() == "efficientnetb0"
++            else f"{(architecture or 'efficientnetb0').lower()}_preprocess_input"
++        ),
++        "aspect_ratio_preserved": True,
++        "input_size": size,
++    }
++    return (batch, diagnostics) if return_diagnostics else batch
++
++
+ def preprocess_for_model(
+     image_path: str,
+     architecture: str = "efficientnetb0",
+@@ -120,7 +165,7 @@ def preprocess_for_model(
+         return preprocess_external_keras_image(image_path)
+     if preprocessing_mode == "manuscript":
+         return preprocess_manuscript_image(image_path, architecture=architecture)
+-    return preprocess_calligraphy_image(image_path, architecture=architecture)
++    return prepare_local_classifier_input(image_path, architecture=architecture)
+ 
+ 
+ def preprocess_pil_image(image: Image.Image, target_size=(224, 224), fill=(255, 255, 255)) -> Image.Image:
+diff --git a/tests/test_prediction_pipeline_v2.py b/tests/test_prediction_pipeline_v2.py
+new file mode 100644
+index 0000000..a2806dc
+--- /dev/null
++++ b/tests/test_prediction_pipeline_v2.py
+@@ -0,0 +1,163 @@
++import json
++from pathlib import Path
++
++import numpy as np
++import pytest
++from PIL import Image
++
++from services.class_mapping_service import CLASS_NAMES, validate_production_mapping
++from services.preprocessing_service import prepare_local_classifier_input
++from services.prediction_service import _class_recognition_gate
++from services.khat_detector_service import detect_khat
++
++
++def test_class_mapping_matches_model_output():
++    result = validate_production_mapping(
++        class_indices={name: index for index, name in enumerate(CLASS_NAMES)},
++        num_model_outputs=4,
++        metadata_class_mapping=CLASS_NAMES,
++    )
++    assert result["valid"]
++
++
++@pytest.mark.parametrize(
++    "indices,outputs",
++    [
++        ({"tsuluts": 0, "diwani_jali": 1, "diwani": 2, "naskhi": 3}, 4),
++        ({"naskhi": 0, "diwani": 1, "diwani_jali": 3, "tsuluts": 4}, 4),
++        ({"naskhi": 0, "diwani": 1, "diwani_jali": 2, "tsuluts": 3}, 5),
++    ],
++)
++def test_invalid_mapping_or_output_is_rejected(indices, outputs):
++    with pytest.raises(ValueError, match="Invalid production class mapping"):
++        validate_production_mapping(class_indices=indices, num_model_outputs=outputs)
++
++
++@pytest.mark.parametrize("mode", ["RGB", "RGBA", "L"])
++def test_preprocessing_shape_and_finite_values(tmp_path, mode):
++    size = (80, 160) if mode != "L" else (160, 80)
++    color = 128 if mode == "L" else ((128, 80, 20, 255) if mode == "RGBA" else (128, 80, 20))
++    path = tmp_path / f"input_{mode}.png"
++    Image.new(mode, size, color).save(path)
++    batch, diagnostic = prepare_local_classifier_input(
++        str(path), "efficientnetb0", return_diagnostics=True
++    )
++    assert batch.shape == (1, 224, 224, 3)
++    assert batch.dtype == np.float32
++    assert np.isfinite(batch).all()
++    assert diagnostic["aspect_ratio_preserved"] is True
++    # EfficientNetB0 preprocessing must not divide an already scaled image again.
++    assert diagnostic["max"] > 1.0
++
++
++def test_corrupt_preprocessing_input_rejected(tmp_path):
++    path = tmp_path / "broken.jpg"
++    path.write_bytes(b"not an image")
++    with pytest.raises(Exception):
++        prepare_local_classifier_input(str(path))
++
++
++def test_detector_unavailable_returns_uncertain(tmp_path, monkeypatch):
++    path = tmp_path / "khat.png"
++    Image.new("RGB", (64, 64), "white").save(path)
++    monkeypatch.setattr(
++        "services.khat_detector_service.assess_calligraphy_content",
++        lambda unused: {"is_non_khat_content": False, "decision_code": "likely_khat_content"},
++    )
++    config = {
++        "KHAT_DETECTOR_PATH": str(tmp_path / "missing.keras"),
++        "KHAT_ACCEPT_THRESHOLD": 0.70,
++        "KHAT_REJECT_THRESHOLD": 0.50,
++        "KHAT_BORDERLINE_THRESHOLD": 0.65,
++        "KHAT_HIGH_CONFIDENCE_THRESHOLD": 0.85,
++        "KHAT_DETECTOR_SETTINGS_PATH": str(tmp_path / "settings.json"),
++    }
++    result = detect_khat(str(path), config=config)
++    assert result["input_status"] == "uncertain"
++    assert result["detection_status"] == "detector_unavailable"
++    assert result["khat_probability"] is None
++    assert result["manual_review_required"] is True
++
++
++def test_stage1_hard_rejection_cannot_be_forced(tmp_path, monkeypatch):
++    path = tmp_path / "latin.png"
++    Image.new("RGB", (64, 64), "white").save(path)
++    monkeypatch.setattr(
++        "services.khat_detector_service.assess_calligraphy_content",
++        lambda unused: {
++            "is_non_khat_content": True,
++            "is_latin_script_non_khat": True,
++            "is_photographic_non_khat": False,
++            "rejection_reason": "Input bukan merupakan tulisan Arab.",
++        },
++    )
++    config = {
++        "KHAT_DETECTOR_PATH": str(tmp_path / "missing.keras"),
++        "KHAT_ACCEPT_THRESHOLD": 0.70,
++        "KHAT_REJECT_THRESHOLD": 0.50,
++        "KHAT_BORDERLINE_THRESHOLD": 0.65,
++        "KHAT_HIGH_CONFIDENCE_THRESHOLD": 0.85,
++        "KHAT_DETECTOR_SETTINGS_PATH": str(tmp_path / "settings.json"),
++    }
++    result = detect_khat(str(path), config=config, force_classify=True)
++    assert result["stage2_allowed"] is False
++    assert result["detection_decision"] == "rejected"
++
++
++def test_low_margin_prediction_abstains():
++    config = {
++        "STAGE2_MIN_CONFIDENCE": 0.70,
++        "STAGE2_MIN_MARGIN": 0.10,
++        "STAGE2_MIN_CONFIDENCE_AFTER_STAGE1": 0.55,
++        "STAGE2_MIN_MARGIN_AFTER_STAGE1": 0.10,
++        "CLASS_LABELS": CLASS_NAMES,
++        "CANONICAL_CLASS_ORDER": {name: i for i, name in enumerate(CLASS_NAMES)},
++        "CLASS_DISPLAY_NAMES": {},
++    }
++    result = _class_recognition_gate(
++        {
++            "predicted_class": "naskhi",
++            "confidence": 0.90,
++            "raw_model_scores": {
++                "naskhi": 0.46,
++                "diwani": 0.44,
++                "diwani_jali": 0.06,
++                "tsuluts": 0.04,
++            },
++        },
++        config=config,
++        stage1_confirmed=True,
++    )
++    assert result["abstained"] is True
++    assert result["final_class"] is None
++
++
++def test_raw_and_refined_scores_are_not_max_merged():
++    config = {
++        "STAGE2_MIN_CONFIDENCE": 0.70,
++        "STAGE2_MIN_MARGIN": 0.10,
++        "STAGE2_MIN_CONFIDENCE_AFTER_STAGE1": 0.55,
++        "STAGE2_MIN_MARGIN_AFTER_STAGE1": 0.10,
++        "CLASS_LABELS": CLASS_NAMES,
++        "CANONICAL_CLASS_ORDER": {name: i for i, name in enumerate(CLASS_NAMES)},
++        "CLASS_DISPLAY_NAMES": {},
++    }
++    result = _class_recognition_gate(
++        {
++            "predicted_class": "naskhi",
++            "confidence": 0.99,
++            "gate_confidence": 0.99,
++            "best_single_confidence": 0.99,
++            "raw_model_scores": dict(zip(CLASS_NAMES, [0.30, 0.29, 0.22, 0.19])),
++        },
++        config=config,
++        stage1_confirmed=True,
++    )
++    assert result["abstained"] is True
++
++
++def test_real_regression_manifest_is_explicitly_skipped_when_missing():
++    manifest = Path(__file__).parent / "fixtures" / "prediction_manifest.json"
++    if not manifest.exists():
++        pytest.skip("Real-image prediction manifest is not available in this checkout")
++    assert isinstance(json.loads(manifest.read_text(encoding="utf-8")), list)

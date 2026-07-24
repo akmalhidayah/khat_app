@@ -193,8 +193,10 @@ class Config:
         os.getenv("STAGE2_MIN_CONFIDENCE_AFTER_STAGE1", "0.32")
     )
     STAGE2_MIN_MARGIN_AFTER_STAGE1 = float(
-        os.getenv("STAGE2_MIN_MARGIN_AFTER_STAGE1", "0.02")
+        os.getenv("STAGE2_MIN_MARGIN_AFTER_STAGE1", "0.10")
     )    # Minimum visual similarity (%) to training images for acceptance.
+    STAGE2_PROBABLE_CONFIDENCE = float(os.getenv("STAGE2_PROBABLE_CONFIDENCE", "0.55"))
+    STAGE2_PROBABLE_MARGIN = float(os.getenv("STAGE2_PROBABLE_MARGIN", "0.10"))
     STAGE2_MIN_DATASET_SIMILARITY = float(os.getenv("STAGE2_MIN_DATASET_SIMILARITY", "55"))
     STAGE2_MIN_CLASS_SIMILARITY = float(os.getenv("STAGE2_MIN_CLASS_SIMILARITY", "60"))
     # Soften displayed/inference probabilities toward visual similarity across classes.

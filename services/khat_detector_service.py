@@ -1132,6 +1132,30 @@ def assess_calligraphy_content(image_path: str) -> Dict:
         reason = "Gambar bukan merupakan tulisan Arab."
     elif is_latin:
         reason = "Input bukan merupakan tulisan Arab."
+    if is_latin:
+        decision_code = "rejected_latin"
+    elif is_photographic:
+        decision_code = "rejected_photo"
+    elif looks_like_calligraphy and dense_arabic_page:
+        decision_code = "confirmed_khat_content"
+    elif looks_like_calligraphy:
+        decision_code = "likely_khat_content"
+    else:
+        decision_code = "uncertain_content"
+    evidence_for = []
+    evidence_against = []
+    if looks_like_ink_on_paper:
+        evidence_for.append("ink_on_paper")
+    if looks_like_light_ink_on_dark:
+        evidence_for.append("light_ink_on_dark")
+    if dense_arabic_page:
+        evidence_for.append("dense_arabic_page")
+    if arabic_cursive >= 0.35:
+        evidence_for.append("arabic_cursive_structure")
+    if is_latin:
+        evidence_against.append("latin_script_evidence")
+    if is_photographic:
+        evidence_against.append("photographic_scene_evidence")
     return {
         "looks_like_calligraphy": not is_non_khat,
         "is_photographic_non_khat": is_photographic,
@@ -1145,6 +1169,22 @@ def assess_calligraphy_content(image_path: str) -> Dict:
         "scene_scores": scene_scores,
         "latin_gate": latin_gate,
         "rejection_reason": reason,
+        "decision_code": decision_code,
+        "decision_reason": reason or latin_gate.get("decision_reason") or decision_code,
+        "evidence_for_khat": evidence_for,
+        "evidence_against_khat": evidence_against,
+        "triggered_rules": evidence_for + evidence_against,
+        "feature_snapshot": {
+            "paper_ratio": round(paper_ratio, 4),
+            "midtone_ratio": round(midtone_ratio, 4),
+            "edge_ratio": round(edge_ratio, 4),
+            "mean_saturation": round(mean_saturation, 4),
+            "arabic_cursive_score": round(arabic_cursive, 4),
+            "arabic_baseline_score": round(arabic_baseline, 4),
+            "latin_template_hits": latin_hits,
+            "raw_face_hits": int((human_gate or {}).get("raw_faces") or 0),
+            "skin_validated_faces": int((human_gate or {}).get("faces") or 0),
+        },
     }
 
 
@@ -1751,11 +1791,11 @@ def detect_khat(image_path: str, config=None, force_classify: bool = False) -> D
         # No trained detector: content gate already passed; Stage 2 must still be strict.
         return {
             "detector_available": False,
-            "is_khat": True,
-            "khat_probability": 1.0,
-            "non_khat_probability": 0.0,
-            "input_status": "khat",
-            "detection_status": "moderate_khat",
+            "is_khat": False,
+            "khat_probability": None,
+            "non_khat_probability": None,
+            "input_status": "uncertain",
+            "detection_status": "detector_unavailable",
             "detection_decision": "continue_caution",
             "manual_review_required": True,
             "stage2_allowed": True,
@@ -1778,11 +1818,11 @@ def detect_khat(image_path: str, config=None, force_classify: bool = False) -> D
     except (ValueError, OSError, MemoryError):
         return {
             "detector_available": False,
-            "is_khat": True,
-            "khat_probability": 1.0,
-            "non_khat_probability": 0.0,
-            "input_status": "khat",
-            "detection_status": "moderate_khat",
+            "is_khat": False,
+            "khat_probability": None,
+            "non_khat_probability": None,
+            "input_status": "uncertain",
+            "detection_status": "detector_unavailable",
             "detection_decision": "continue_caution",
             "manual_review_required": True,
             "stage2_allowed": True,

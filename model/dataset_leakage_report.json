@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-07-24T20:10:19.007858+00:00",
+  "dataset_root": "dataset",
+  "files_scanned": 0,
+  "dhash_distance_threshold": 4,
+  "exact_duplicate_groups": [],
+  "perceptual_duplicate_pairs": [],
+  "cross_split_exact_leakage": [],
+  "cross_split_perceptual_leakage": [],
+  "safe_to_use_test_metrics": false,
+  "status": "not_run_no_dataset_files",
+  "mutated_files": false
+}

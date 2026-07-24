@@ -118,6 +118,7 @@ def _class_recognition_gate(
     image_path: Optional[str] = None,
     config=None,
     stage1_confirmed: bool = False,
+    stage1_content: Optional[Dict] = None,
 ) -> Optional[Dict]:
     """Return rejection metadata when the image should not receive a class label.
 
@@ -166,28 +167,21 @@ def _class_recognition_gate(
     else:
         conf_pct = float(sorted_probs[0]["percent"]) if sorted_probs else 0.0
 
-    # Prefer the stronger of fused vs raw model scores so similarity blending cannot
-    # hide a clear stroke match to one of the 4 trained classes.
+    # Raw model evidence is authoritative. Never max-merge confidence from
+    # refinement, fusion, similarity, or another component.
     if pred_class and raw_scores:
-        raw_conf_pct = float(raw_scores.get(pred_class, 0)) * 100
-        raw_margin_pct = _margin_from_scores(raw_scores, pred_class)
-        conf_pct = max(conf_pct, raw_conf_pct)
-        margin_pct = max(margin_pct, raw_margin_pct)
-    best_single = type_result.get("best_single_confidence")
-    if best_single is not None:
-        best_pct = float(best_single) * 100 if float(best_single) <= 1 else float(best_single)
-        conf_pct = max(conf_pct, best_pct)
+        raw_pred = max(raw_scores, key=raw_scores.get)
+        pred_class = raw_pred
+        conf_pct = float(raw_scores[raw_pred]) * 100
+        margin_pct = _margin_from_scores(raw_scores, raw_pred)
 
     reasons = []
-    similarity_failed = False
     rejection_code = REJECTION_OUTSIDE_CLASSES
 
     # Safety net: Latin / photographic content must never receive a class label.
-    if image_path:
+    if image_path and stage1_content:
         try:
-            from services.khat_detector_service import assess_calligraphy_content
-
-            content = assess_calligraphy_content(image_path)
+            content = stage1_content
             if content.get("is_latin_script_non_khat"):
                 payload = build_unrecognized_payload(
                     display_list=display_list,
@@ -239,53 +233,22 @@ def _class_recognition_gate(
         reasons.append(reason_invalid_class(display_list))
         rejection_code = REJECTION_OUTSIDE_CLASSES
     else:
-        # After Stage 1, accept any of the 4 trained classes once confidence clears the soft floor.
-        if stage1_confirmed and pred_class in class_labels and conf_pct >= min_conf_pct:
+        if (
+            stage1_confirmed
+            and pred_class in class_labels
+            and conf_pct >= min_conf_pct
+            and margin_pct >= min_margin_pct
+        ):
             return None
         if conf_pct < min_conf_pct:
             reasons.append(reason_low_confidence(conf_pct, min_conf_pct))
             rejection_code = REJECTION_LOW_SIMILARITY
-        # Margin is only a hard block on the standalone (no Stage-1) path.
-        if (not stage1_confirmed) and margin_pct < min_margin_pct:
+        if margin_pct < min_margin_pct:
             reasons.append(reason_low_margin(margin_pct, min_margin_pct))
             rejection_code = REJECTION_LOW_SIMILARITY
 
     if not reasons:
         return None
-
-    # Soft salvage: Stage-1-confirmed Arabic + valid 4-class prediction with
-    # near-threshold confidence, or visual fit to training samples.
-    soft_floor = min_conf_pct * 0.85 if stage1_confirmed else min_conf_pct
-    if (
-        stage1_confirmed
-        and pred_class in class_labels
-        and conf_pct >= soft_floor
-        and rejection_code == REJECTION_LOW_SIMILARITY
-    ):
-        return None
-
-    if (
-        not similarity_failed
-        and image_path
-        and pred_class
-        and pred_class in class_labels
-        and conf_pct >= max(soft_floor, 40.0)
-    ):
-        try:
-            fit = check_trained_class_fit(
-                image_path,
-                pred_class,
-                config,
-                trained_classes=class_labels,
-                model_confidence_pct=conf_pct,
-                strict=False,
-            )
-            if fit.get("available") and fit.get("fits"):
-                return None
-        except Exception as exc:
-            if isinstance(exc, ValueError) and not should_treat_as_unrecognized(exc):
-                raise
-            pass
 
     payload = build_unrecognized_payload(
         display_list=display_list,
@@ -309,6 +272,10 @@ def _class_recognition_gate(
         "status_label": payload["status_label"],
         "reliability": "Rejected",
         "stage2_rejected": True,
+        "final_status": "uncertain_class",
+        "final_class": None,
+        "abstained": True,
+        "decision_reason": "; ".join(reasons),
         "trained_classes": class_labels,
         "scores": None,
         "probabilities": None,
@@ -324,16 +291,27 @@ def _apply_class_recognition_gate(
     image_path: Optional[str] = None,
     config=None,
     stage1_confirmed: bool = False,
+    stage1_content: Optional[Dict] = None,
 ) -> Dict:
+    evaluated = dict(type_result)
+    raw_scores = evaluated.get("raw_model_scores") or {}
+    if raw_scores:
+        raw_pred = max(raw_scores, key=raw_scores.get)
+        evaluated["predicted_class"] = raw_pred
+        evaluated["confidence"] = float(raw_scores[raw_pred])
+        evaluated["gate_confidence"] = float(raw_scores[raw_pred])
+        evaluated["top2_margin_pct"] = _margin_from_scores(raw_scores, raw_pred)
+        evaluated["top2_margin"] = evaluated["top2_margin_pct"] / 100.0
     rejection = _class_recognition_gate(
-        type_result,
+        evaluated,
         image_path=image_path,
         config=config,
         stage1_confirmed=stage1_confirmed,
+        stage1_content=stage1_content,
     )
     if rejection is None:
-        return type_result
-    return {**type_result, **rejection}
+        return evaluated
+    return {**evaluated, **rejection}
 
 
 def _reliability_label(confidence_pct: float, margin_pct: float) -> str:
@@ -419,6 +397,8 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
         ensemble_used = bool(ensemble.get("ensemble_used"))
         model_source = ensemble.get("model_source") or "ensemble"
         best_single_confidence = float(ensemble.get("best_single_confidence") or 0.0)
+        active_mapping = dict(ensemble.get("class_indices") or {})
+        preprocessing_diagnostics = None
     else:
         class_indices = resolve_model_class_indices(current_app.config)
         if not class_indices:
@@ -436,16 +416,48 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
         from services.model_cache_service import get_cached_classifier
 
         model = get_cached_classifier(model_path, architecture, len(class_labels))
+        if architecture == "efficientnetb0":
+            from services.class_mapping_service import validate_production_mapping
+
+            metadata_mapping = None
+            best_meta_path = current_app.config.get("BEST_MODEL_METADATA_PATH")
+            if best_meta_path and os.path.isfile(best_meta_path):
+                try:
+                    with open(best_meta_path, "r", encoding="utf-8") as handle:
+                        best_meta = json.load(handle)
+                    metadata_mapping = best_meta.get("class_mapping")
+                except (OSError, json.JSONDecodeError):
+                    metadata_mapping = None
+            validate_production_mapping(
+                class_indices=class_indices,
+                num_model_outputs=int(model.output_shape[-1]),
+                metadata_class_mapping=metadata_mapping,
+            )
         inv_map = _invert_class_indices(class_indices) if class_indices else {
             index: label for index, label in enumerate(class_labels)
         }
+        active_mapping = dict(class_indices)
+        preprocessing_diagnostics = None
 
         if use_tta:
             batches = _tta_variants(image_path, architecture, preprocessing_mode=preprocessing_mode)
             probs_list = [model.predict(batch, verbose=0)[0] for batch in batches]
             probs = np.mean(probs_list, axis=0)
         else:
-            batch = preprocess_for_model(image_path, architecture=architecture, preprocessing_mode=preprocessing_mode)
+            if preprocessing_mode == "standard" and architecture != "keras_h5":
+                from services.preprocessing_service import prepare_local_classifier_input
+
+                batch, preprocessing_diagnostics = prepare_local_classifier_input(
+                    image_path,
+                    architecture=architecture,
+                    return_diagnostics=True,
+                )
+            else:
+                batch = preprocess_for_model(
+                    image_path,
+                    architecture=architecture,
+                    preprocessing_mode=preprocessing_mode,
+                )
             probs = model.predict(batch, verbose=0)[0]
 
         from services.calibration_service import load_calibrator, apply_calibrator
@@ -481,6 +493,7 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
         model_source = "external" if current_app.config.get("USE_EXTERNAL_MODEL") else "local"
         best_single_confidence = gate_confidence or 0.0
 
+    immutable_raw_scores = dict(raw_scores)
     from services.diwani_pair_service import apply_contested_style_pairs
 
     # Contested-pair only: Diwani ↔ Diwani Jali, then Diwani Jali ↔ Tsuluts.
@@ -580,7 +593,9 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
         "confidence": gate_confidence,
         "gate_confidence": gate_confidence,
         "gate_scores": fused_scores,
-        "raw_model_scores": raw_scores,
+        "raw_model_scores": immutable_raw_scores,
+        "refined_scores": display_scores,
+        "refined_top2_margin_pct": margin,
         "dataset_aligned": bool(alignment.get("dataset_aligned")),
         "ensemble_used": ensemble_used,
         "best_single_confidence": best_single_confidence if ensemble_used else None,
@@ -593,9 +608,20 @@ def _classify_khat_type(image_path: str, use_tta: bool = False, preprocessing_mo
         "top2_margin_pct": gate_margin,
         "gate_top2_margin_pct": gate_margin,
         "display_top2_margin_pct": margin,
-        "reliability": _reliability_label(gate_margin, gate_margin),
+        "reliability": _reliability_label(gate_confidence * 100, gate_margin),
         "model_path": model_path,
         "model_source_key": model_source,
+        "model_diagnostics": {
+            "class_mapping": active_mapping,
+            "model_path": model_path,
+            "preprocessing": preprocessing_diagnostics,
+            "raw_top1": max(immutable_raw_scores, key=immutable_raw_scores.get)
+            if immutable_raw_scores else None,
+            "raw_top2_margin_pct": _margin_from_scores(
+                immutable_raw_scores,
+                max(immutable_raw_scores, key=immutable_raw_scores.get),
+            ) if immutable_raw_scores else None,
+        },
     }
 
 
@@ -827,6 +853,7 @@ def predict_image(
         type_result,
         image_path=image_path,
         stage1_confirmed=True,
+        stage1_content=detection.get("content_gate") or {},
     )
     if type_result.get("input_status") in ("unrecognized", "non_khat"):
         return {
@@ -869,4 +896,9 @@ def predict_image(
         "model_architecture": type_result.get("model_architecture") or _resolve_architecture(),
         "stage2_message": stage2_message,
         "message": reliability,
+        "final_status": "confirmed_class" if reliability == "Strong Prediction" else "probable_class",
+        "final_class": type_result.get("predicted_class"),
+        "abstained": False,
+        "decision_reason": "raw confidence and top-two margin passed Stage 2",
+        "stage1_trace": detection.get("content_gate"),
     }
