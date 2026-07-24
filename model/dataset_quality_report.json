@@ -1,0 +1,44 @@
+{
+  "generated_at": "2026-07-04 12:11:39 UTC",
+  "total_scanned": 2100,
+  "total_before_cleaning": 2100,
+  "valid_images": 2100,
+  "total_after_cleaning": 2100,
+  "duplicate_images": 0,
+  "duplicates_removed": 0,
+  "near_duplicates_removed": 0,
+  "corrupted_images": 0,
+  "corrupted_removed": 0,
+  "converted_images": 0,
+  "non_image_removed": 0,
+  "webp_converted": 0,
+  "resized_to_224": 0,
+  "per_class_counts": {
+    "naskhi": 700,
+    "diwani": 700,
+    "diwani_jali": 0,
+    "tsuluts": 700
+  },
+  "class_counts": {
+    "naskhi": 700,
+    "diwani": 700,
+    "diwani_jali": 0,
+    "tsuluts": 700
+  },
+  "class_imbalance_percent": 100.0,
+  "imbalance_ratio": 100.0,
+  "rejected_folder": "D:\\dataset_kaligrafi\\rejected",
+  "supported_formats": [
+    "jpeg",
+    "jpg",
+    "png",
+    "webp"
+  ],
+  "warnings": [
+    "Class imbalance detected (100.0% spread). Naskhi and Diwani are minority classes."
+  ],
+  "recommendations": [
+    "Run balanced augmentation before research training.",
+    "Use class weights during training."
+  ]
+}

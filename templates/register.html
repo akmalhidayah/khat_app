@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Daftar Akun — Arabic Khat Classification{% endblock %}
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+{% endblock %}
+{% block content %}
+<div class="login-page{% if decorative_image_url %} has-page-bg{% endif %}">
+  {% if decorative_image_url %}
+  <div class="login-page-bg" aria-hidden="true">
+    <img class="login-page-bg-photo" src="{{ decorative_image_url }}" alt="" decoding="async" fetchpriority="high">
+    <div class="login-page-bg-wash"></div>
+  </div>
+  {% endif %}
+  <aside class="login-hero" aria-label="Identitas sistem Arabic Khat AI">
+    <div class="hero-bg{% if decorative_image_url %} has-calligraphy{% endif %}" aria-hidden="true">
+      <svg class="hero-geo-svg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="islamicGeoReg" width="48" height="48" patternUnits="userSpaceOnUse">
+            <path d="M24 0 L48 24 L24 48 L0 24 Z" fill="none" stroke="rgba(201,169,98,0.09)" stroke-width="0.75"/>
+            <circle cx="24" cy="24" r="6" fill="none" stroke="rgba(34,211,238,0.06)" stroke-width="0.5"/>
+            <path d="M24 8 L32 24 L24 40 L16 24 Z" fill="none" stroke="rgba(201,169,98,0.05)" stroke-width="0.5"/>
+          </pattern>
+          <radialGradient id="heroGlowTealReg" cx="30%" cy="40%" r="55%">
+            <stop offset="0%" stop-color="rgba(20,184,166,0.22)"/>
+            <stop offset="100%" stop-color="rgba(20,184,166,0)"/>
+          </radialGradient>
+          <radialGradient id="heroGlowGoldReg" cx="75%" cy="75%" r="45%">
+            <stop offset="0%" stop-color="rgba(201,169,98,0.14)"/>
+            <stop offset="100%" stop-color="rgba(201,169,98,0)"/>
+          </radialGradient>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#islamicGeoReg)"/>
+        <rect width="100%" height="100%" fill="url(#heroGlowTealReg)"/>
+        <rect width="100%" height="100%" fill="url(#heroGlowGoldReg)"/>
+      </svg>
+      <div class="hero-vignette"></div>
+    </div>
+
+    <div class="hero-content">
+      <div class="hero-brand">
+        <div class="hero-badge">
+          <i class="bi bi-person-plus" aria-hidden="true"></i>
+          <span>Buat Akun Penelitian</span>
+        </div>
+        <h1 class="hero-title">Arabic Khat AI</h1>
+        <p class="hero-tagline">Daftar untuk mulai mengklasifikasikan gaya kaligrafi Arab dengan model CNN dan transfer learning.</p>
+
+        <ul class="hero-pills" aria-label="Kemampuan sistem">
+          <li><i class="bi bi-brush" aria-hidden="true"></i> 4 Gaya Khat</li>
+          <li><i class="bi bi-cpu" aria-hidden="true"></i> CNN / VGG16</li>
+          <li><i class="bi bi-lightning-charge" aria-hidden="true"></i> Real-time</li>
+          <li><i class="bi bi-mortarboard" aria-hidden="true"></i> Akademik</li>
+        </ul>
+      </div>
+
+      <div class="hero-artwork login-hero-image">
+        <div class="hero-art-frame">
+          <div class="hero-art-corner hero-art-corner-tl" aria-hidden="true"></div>
+          <div class="hero-art-corner hero-art-corner-tr" aria-hidden="true"></div>
+          <div class="hero-art-corner hero-art-corner-bl" aria-hidden="true"></div>
+          <div class="hero-art-corner hero-art-corner-br" aria-hidden="true"></div>
+          {% if decorative_image_url %}
+          <img src="{{ decorative_image_url }}" alt="Contoh kaligrafi Arab untuk klasifikasi" class="hero-art-img" loading="eager">
+          {% else %}
+          <div class="hero-art-fallback" lang="ar" aria-hidden="true">خط</div>
+          {% endif %}
+          <div class="hero-art-shimmer" aria-hidden="true"></div>
+        </div>
+        <p class="hero-art-caption">
+          <i class="bi bi-diagram-3" aria-hidden="true"></i>
+          Analisis gaya: Naskhi · Diwani · Diwani Jali · Tsuluts
+        </p>
+      </div>
+    </div>
+
+    <footer class="hero-footer" aria-hidden="true">
+      <span>Arabic Calligraphy Classification System</span>
+      <span class="hero-footer-dot">·</span>
+      <span>CNN Transfer Learning</span>
+    </footer>
+  </aside>
+
+  <section class="login-panel" aria-label="Form daftar akun">
+    <div class="login-panel-bg" aria-hidden="true"></div>
+
+    <div class="login-card">
+      <header class="login-card-header">
+        <div class="login-secure-icon" aria-hidden="true">
+          <i class="bi bi-person-badge-fill"></i>
+        </div>
+        <p class="login-eyebrow">Akun Baru</p>
+        <h2 class="login-heading">Daftar Akun</h2>
+        <p class="login-subtext">
+          Buat akun pengguna untuk mengakses klasifikasi gaya kaligrafi Arab.
+          Peran admin hanya dapat dibuat oleh administrator sistem.
+        </p>
+      </header>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="login-alerts" role="status" aria-live="polite">
+        {% for category, message in messages %}
+        <div class="login-alert login-alert-{{ category }}" role="alert">
+          <span class="login-alert-icon" aria-hidden="true">
+            <i class="bi bi-{{ 'exclamation-circle-fill' if category == 'danger' else 'check-circle-fill' if category == 'success' else 'info-circle-fill' if category == 'info' else 'exclamation-triangle-fill' }}"></i>
+          </span>
+          <span class="login-alert-text">{{ message }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+
+      <form method="post" class="login-form" id="registerForm" novalidate>
+        <div class="login-field">
+          <label class="login-label" for="name">Nama Lengkap</label>
+          <div class="input-wrap{% if field_errors.get('name') %} is-invalid{% endif %}">
+            <span class="input-icon" aria-hidden="true"><i class="bi bi-card-heading"></i></span>
+            <input class="login-input{% if field_errors.get('name') %} is-invalid{% endif %}" type="text" id="name" name="name" value="{{ form_values.name }}" placeholder="Nama lengkap Anda" autocomplete="name" required aria-required="true" maxlength="100">
+          </div>
+          <span class="login-field-error" id="nameError" role="alert">{{ field_errors.get('name', '') }}</span>
+        </div>
+
+        <div class="login-field">
+          <label class="login-label" for="username">Username</label>
+          <div class="input-wrap{% if field_errors.get('username') %} is-invalid{% endif %}">
+            <span class="input-icon" aria-hidden="true"><i class="bi bi-person"></i></span>
+            <input class="login-input{% if field_errors.get('username') %} is-invalid{% endif %}" type="text" id="username" name="username" value="{{ form_values.username }}" placeholder="Contoh: peneliti01" autocomplete="username" required aria-required="true" maxlength="50" pattern="[A-Za-z0-9_]{3,50}">
+          </div>
+          <span class="login-field-error" id="usernameError" role="alert">{{ field_errors.get('username', '') }}</span>
+        </div>
+
+        <div class="login-field">
+          <label class="login-label" for="email">Email <span class="login-label-optional">(opsional)</span></label>
+          <div class="input-wrap{% if field_errors.get('email') %} is-invalid{% endif %}">
+            <span class="input-icon" aria-hidden="true"><i class="bi bi-envelope"></i></span>
+            <input class="login-input{% if field_errors.get('email') %} is-invalid{% endif %}" type="email" id="email" name="email" value="{{ form_values.email }}" placeholder="nama@email.com" autocomplete="email" maxlength="120">
+          </div>
+          <span class="login-field-error" id="emailError" role="alert">{{ field_errors.get('email', '') }}</span>
+        </div>
+
+        <div class="login-field">
+          <label class="login-label" for="password">Password</label>
+          <div class="input-wrap has-toggle{% if field_errors.get('password') %} is-invalid{% endif %}">
+            <span class="input-icon" aria-hidden="true"><i class="bi bi-lock"></i></span>
+            <input class="login-input{% if field_errors.get('password') %} is-invalid{% endif %}" type="password" id="password" name="password" placeholder="Minimal 6 karakter" autocomplete="new-password" required aria-required="true" minlength="6">
+            <button type="button" class="password-toggle" id="passwordToggle" aria-label="Tampilkan password" aria-pressed="false">
+              <i class="bi bi-eye" aria-hidden="true"></i>
+            </button>
+          </div>
+          <span class="login-field-error" id="passwordError" role="alert">{{ field_errors.get('password', '') }}</span>
+        </div>
+
+        <div class="login-field">
+          <label class="login-label" for="password_confirm">Konfirmasi Password</label>
+          <div class="input-wrap has-toggle{% if field_errors.get('password_confirm') %} is-invalid{% endif %}">
+            <span class="input-icon" aria-hidden="true"><i class="bi bi-shield-lock"></i></span>
+            <input class="login-input{% if field_errors.get('password_confirm') %} is-invalid{% endif %}" type="password" id="password_confirm" name="password_confirm" placeholder="Ulangi password" autocomplete="new-password" required aria-required="true" minlength="6">
+            <button type="button" class="password-toggle" id="passwordConfirmToggle" aria-label="Tampilkan konfirmasi password" aria-pressed="false">
+              <i class="bi bi-eye" aria-hidden="true"></i>
+            </button>
+          </div>
+          <span class="login-field-error" id="password_confirmError" role="alert">{{ field_errors.get('password_confirm', '') }}</span>
+        </div>
+
+        <button class="login-btn" type="submit" id="registerSubmitBtn">
+          <span class="login-btn-icon" aria-hidden="true"><i class="bi bi-person-plus"></i></span>
+          <span class="login-btn-text">Daftar Sekarang</span>
+          <span class="login-btn-loading-text d-none" aria-hidden="true">Membuat akun…</span>
+          <span class="login-btn-spinner d-none" aria-hidden="true"></span>
+        </button>
+      </form>
+
+      <p class="login-switch">
+        Sudah punya akun?
+        <a href="{{ url_for('auth.login') }}" class="login-switch-link">Masuk di sini</a>
+      </p>
+    </div>
+  </section>
+</div>
+<script src="{{ url_for('static', filename='js/register.js') }}"></script>
+{% endblock %}

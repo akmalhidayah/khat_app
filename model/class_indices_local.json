@@ -1,0 +1,21 @@
+{
+  "class_indices": {
+    "naskhi": 0,
+    "diwani": 1,
+    "diwani_jali": 2,
+    "tsuluts": 3
+  },
+  "class_names": [
+    "naskhi",
+    "diwani",
+    "diwani_jali",
+    "tsuluts"
+  ],
+  "display_names": {
+    "naskhi": "Naskhi",
+    "diwani": "Diwani",
+    "diwani_jali": "Diwani Jali",
+    "tsuluts": "Tsuluts"
+  },
+  "source": "local_efficientnetb0"
+}

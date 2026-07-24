@@ -1,0 +1,162 @@
+{
+  "generated_at": "2026-07-21 02:20 UTC",
+  "split": "test",
+  "pairs": [
+    {
+      "true_class": "tsuluts",
+      "predicted_class": "diwani_jali",
+      "count": 30,
+      "percentage": 21.74,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__157543d1de0248de8469c468cb608161.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__2a362543190241f992097ad30b57afcd.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__34952dec9aa54d68a71c201a7d1b251f.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__421fec06588a4492929c512a83574811.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__49e3e239e2af4ea4869d65b52a915be2.jpg"
+      ]
+    },
+    {
+      "true_class": "diwani_jali",
+      "predicted_class": "tsuluts",
+      "count": 13,
+      "percentage": 9.42,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__134bc3e238a84c5a890dd9a131e3c8a4.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__33c61ec1291e45d5bb325a0c0c9347b3.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__5827dda79d154c98a62400fc84d9bdb0.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__7140c154956a42e4a196f3e05d7092f8.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__739f3c2aba894aa591126b6cadeee449.jpg"
+      ]
+    },
+    {
+      "true_class": "diwani",
+      "predicted_class": "tsuluts",
+      "count": 13,
+      "percentage": 9.42,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__05801252fa344cd6b571bc62fd54e888.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__06a10bd520b04d1ba67a592b41f06fd9.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__1eb25caa4c6e40dd91b782c94b8b4844.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__3892a50eaa854071ad2b44c87940633b.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__46efec7388c84d2f9efcc03b9a58679c.jpg"
+      ]
+    },
+    {
+      "true_class": "naskhi",
+      "predicted_class": "diwani_jali",
+      "count": 12,
+      "percentage": 8.7,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__1c87fda0c5ef416299bd650745e5d75c.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__2581396f4e0545dbb5a65b491479e03e.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__44dafcebdcca4270b93bd150800f196b.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__5a6faf53661b4105997cb4353f743d77.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__65758062cf7b4853be7471b4999bb54e.jpg"
+      ]
+    },
+    {
+      "true_class": "tsuluts",
+      "predicted_class": "naskhi",
+      "count": 11,
+      "percentage": 7.97,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__1bcb45009bf741799525a8d202d9068b.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__244c3a85f6074550abb2517f19edd4b0.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__2f2064108d294c0888059011609bf592.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__4af20df017d845c9bfda780e51f1ba46.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__5f5ee19dc71e4f9e8e2c0c07b0da38a7.jpg"
+      ]
+    },
+    {
+      "true_class": "naskhi",
+      "predicted_class": "diwani",
+      "count": 11,
+      "percentage": 7.97,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__00a40cb035234c3181120bb83f0a0756.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__3a7c306fdce4431587602d9b70af7dc6.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__41e34beca1744ecda6cc660be883973b.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__4a21940b03a148ea9f5b4fafd0f14673.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__58027d31fd854515b44614b0a279a733.jpg"
+      ]
+    },
+    {
+      "true_class": "diwani_jali",
+      "predicted_class": "diwani",
+      "count": 9,
+      "percentage": 6.52,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__3f46997279994c92883d59991c17a4e3.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__5a24deded12c41f6a21c8307886930ad.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__7dab75a1a66347b482b8e9dbf08b4665.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__8ef5b5eacd0e41a2b27b4c7dca341ab6.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__b304d6aa91cc412f9b5852691c33d0f9.jpg"
+      ]
+    },
+    {
+      "true_class": "diwani",
+      "predicted_class": "diwani_jali",
+      "count": 9,
+      "percentage": 6.52,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__0654ca9475cb480ca3e87b0b8b313e43.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__1063911cb6694098aee77eeeaf40b145.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__331f291304064cb58313319e696aa552.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__81345cc5f0cc4d14920a78d24eb529b0.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__825b9dc8df3b46e188d26a878643876b.jpg"
+      ]
+    },
+    {
+      "true_class": "diwani_jali",
+      "predicted_class": "naskhi",
+      "count": 8,
+      "percentage": 5.8,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__23ed1707e79442498a50b60c71facabf.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__45bb638684884ceb95812ae8746208f0.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__463c83fffecd4107aac67dfdc563e742.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__800242d475d2429d998375a812b87a72.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani_jali__905b16f1b87c440b926e8ff15b63947e.jpg"
+      ]
+    },
+    {
+      "true_class": "naskhi",
+      "predicted_class": "tsuluts",
+      "count": 8,
+      "percentage": 5.8,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__0a09fd22a59d4a2b941859e08b0b467e.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__0fa4ad4e0f874f9daf5c521d0c18dae2.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__450ca92087b24653b95c685397a2e899.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__4ecbd141e5264adf9000016294622339.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\naskhi__7cad29ec656e4a59bea6765ea7b24338.jpg"
+      ]
+    },
+    {
+      "true_class": "tsuluts",
+      "predicted_class": "diwani",
+      "count": 7,
+      "percentage": 5.07,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__1a4812b51c764ac78fc8cdc6270bc025.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__31b2bd6375ef4dc2b9f53f9eafde4eae.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__562c0da669974e02a82f5bb7f563c7a1.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__62572b90d2684aa4b02190633ea5d5a3.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\tsuluts__adf2389d585d46bf93da8977f784b117.jpg"
+      ]
+    },
+    {
+      "true_class": "diwani",
+      "predicted_class": "naskhi",
+      "count": 7,
+      "percentage": 5.07,
+      "example_images": [
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__0ab1926c11494a24922f4c269614261b.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__4bebc592cf314368b3e67446a46b1a79.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__64f1d8d81d1945b4b0f01067c4a0254f.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__84fb459bd7eb483e9887334c3c50f668.jpg",
+        "E:\\xampp\\htdocs\\khat-classification-web\\static\\evaluation_previews\\diwani__9d7fa4f7dde14a648159daff1e41678d.jpg"
+      ]
+    }
+  ]
+}

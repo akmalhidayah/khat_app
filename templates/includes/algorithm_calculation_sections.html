@@ -1,0 +1,748 @@
+{# All academic sections for Perhitungan Algoritma page #}
+{% set lp = latest_prediction %}
+{% set th = thresholds %}
+{% set ds = dataset_summary %}
+{% set sm = ds.split_math or {} %}
+{% set ev = evaluation_summary %}
+{% set em = evaluation_metrics or {} %}
+{% set cm = confusion_data %}
+{% set ep = error_pairs %}
+
+{# 1. Ringkasan Algoritma #}
+<section class="algo-section algo-card" id="sec-summary">
+  <div class="algo-card-head">
+    <span class="algo-section-num">01</span>
+    <h2 class="algo-card-title">Ringkasan Algoritma</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-lead-narrative">
+      <p>
+        Sistem Arabic Khat AI adalah <strong>klasifikasi citra</strong> (bukan deteksi objek per huruf).
+        Model belajar pola visual dari ribuan contoh kaligrafi, lalu memberi skor probabilitas untuk empat gaya Khat.
+        Keputusan akhir selalu berdasarkan kelas dengan probabilitas tertinggi — bukan tebakan acak.
+      </p>
+    </div>
+    <div class="algo-summary-grid">
+      <div class="algo-kv"><span>Jenis Algoritma</span><strong>Klasifikasi Citra CNN / Transfer Learning ({{ model_info.architecture_label or model_info.source }})</strong></div>
+      <div class="algo-kv"><span>Runtime</span><strong>{{ model_info.runtime }}</strong></div>
+      <div class="algo-kv"><span>Masukan</span><strong>Citra RGB 224 × 224 piksel</strong></div>
+      <div class="algo-kv"><span>Keluaran</span><strong>4 probabilitas kelas Khat (total 100%)</strong></div>
+      <div class="algo-kv"><span>Keputusan Utama</span><strong>Kelas dengan probabilitas softmax tertinggi</strong></div>
+      {% if sm.processed %}
+      <div class="algo-kv"><span>Dataset Diproses</span><strong>{{ sm.processed }} citra (train {{ sm.train_count }} + val {{ sm.validation_count }} + test {{ sm.test_count }})</strong></div>
+      {% endif %}
+    </div>
+    <p class="algo-classes-list">
+      Kelas output:
+      {% for label in model_info.labels %}<span class="algo-class-pill">{{ label }}</span>{% endfor %}
+    </p>
+    <div class="algo-note">
+      <i class="bi bi-info-circle"></i>
+      Aplikasi menampilkan perhitungan inferensi dan logika keputusan berdasarkan output model.
+      {% if model_info.is_teachable_machine %}
+      Aplikasi <em>tidak</em> mengekspos perhitungan internal layer-by-layer neural network Teachable Machine.
+      {% else %}
+      Arsitektur backbone EfficientNetB0 dilatih dengan transfer learning; detail layer internal tidak ditampilkan di halaman ini.
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{# 2. Alur Kerja #}
+<section class="algo-section algo-card" id="sec-workflow">
+  <div class="algo-card-head">
+    <span class="algo-section-num">02</span>
+    <h2 class="algo-card-title">Alur Kerja Sistem</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-lead-narrative">
+      <p>
+        Alur di bawah ini menunjukkan urutan proses dari saat pengguna mengunggah gambar
+        hingga hasil ditampilkan. Ikuti nomor langkah untuk memahami di mana perhitungan probabilitas,
+        confidence, dan keputusan akhir terjadi.
+      </p>
+    </div>
+    <ol class="algo-stepper">
+      {% for step in workflow_steps %}
+      <li class="algo-step">
+        <div class="algo-step-marker">{{ step.step }}</div>
+        <div class="algo-step-content">
+          <h3>{{ step.title }}</h3>
+          <p>{{ step.description }}</p>
+          {% if step.detail %}
+          <p class="algo-step-detail"><i class="bi bi-arrow-return-right"></i> {{ step.detail }}</p>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</section>
+
+{# 3. Tahap 1 #}
+<section class="algo-section algo-card" id="sec-stage1">
+  <div class="algo-card-head">
+    <span class="algo-section-num">03</span>
+    <h2 class="algo-card-title">Tahap 1 — Validasi Input Khat / Non-Khat</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-lead-narrative">
+      <p>
+        Sebelum model empat kelas dijalankan, sistem (jika detektor Khat aktif) menilai
+        <em>apakah gambar ini benar-benar kaligrafi Khat Arab</em>. Ini mencegah foto random
+        (logo, pemandangan, teks Latin) dipaksa masuk ke klasifikasi gaya Khat.
+      </p>
+    </div>
+    <div class="algo-formula-block">
+      <div><strong>Probabilitas Khat (%)</strong> = Skor Detektor Khat × 100</div>
+      <div><strong>Probabilitas Non-Khat (%)</strong> = 100 − Probabilitas Khat</div>
+    </div>
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>Kondisi</th><th>Status</th><th>Keputusan</th></tr></thead>
+        <tbody>
+          <tr><td>Probabilitas Khat ≥ {{ th.khat_accept }}%</td><td><span class="algo-status ok">Khat Terkonfirmasi</span></td><td>Lanjut klasifikasi 4 kelas</td></tr>
+          <tr><td>{{ th.khat_reject }}% ≤ Probabilitas Khat &lt; {{ th.khat_accept }}%</td><td><span class="algo-status warn">Input Ragu</span></td><td>Review manual</td></tr>
+          <tr><td>Probabilitas Khat &lt; {{ th.khat_reject }}%</td><td><span class="algo-status danger">Non-Khat</span></td><td>Ditolak — tidak diklasifikasi</td></tr>
+        </tbody>
+      </table>
+    </div>
+    {% if not th.detector_available %}
+    <div class="algo-note warn"><i class="bi bi-exclamation-triangle"></i> Khat detector belum aktif. Tahap 1 dapat dilewati saat detector tidak tersedia.</div>
+    {% endif %}
+  </div>
+</section>
+
+{# 4. Tahap 2 #}
+<section class="algo-section algo-card" id="sec-stage2">
+  <div class="algo-card-head">
+    <span class="algo-section-num">04</span>
+    <h2 class="algo-card-title">Tahap 2 — Klasifikasi Jenis Khat</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-lead-narrative">
+      <p>
+        Setelah lolos Tahap 1, model {{ model_info.architecture_label or model_info.source }} memetakan citra ke <strong>salah satu</strong>
+        dari empat gaya berikut. Model tidak pernah menjawab “bukan keempat kelas ini” —
+        itulah mengapa confidence dan margin penting untuk menilai kepercayaan hasil.
+      </p>
+    </div>
+    <div class="algo-classes-grid">
+      {% for label in model_info.labels %}<span class="algo-class-pill lg">{{ label }}</span>{% endfor %}
+    </div>
+    <p><strong>Keputusan:</strong> Model memilih kelas dengan probabilitas tertinggi (<code>argmax</code>).</p>
+    <div class="algo-note warn">
+      <i class="bi bi-exclamation-triangle"></i>
+      Model hanya dilatih pada empat kelas. Citra gaya lain (Kufi, Riq'ah, Farisi, Maghribi) dapat dipaksa ke kelas terdekat.
+      Validasi confidence dan margin diperlukan.
+    </div>
+  </div>
+</section>
+
+{# 5. Preprocessing #}
+<section class="algo-section algo-card" id="sec-preprocess">
+  <div class="algo-card-head">
+    <span class="algo-section-num">05</span>
+    <h2 class="algo-card-title">Preprocessing Gambar</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>Step</th><th>Description</th><th>Output</th></tr></thead>
+        <tbody>
+          <tr><td>Image validation</td><td>Memeriksa format dan keterbacaan file</td><td>Valid image</td></tr>
+          <tr><td>RGB conversion</td><td>Mengonversi semua citra ke RGB</td><td>3-channel image</td></tr>
+          <tr><td>Auto-rotate (EXIF)</td><td>Rotasi otomatis berdasarkan metadata</td><td>Orientasi benar</td></tr>
+          <tr><td>Resize</td><td>Mengubah ukuran ke 224 × 224 px</td><td>Model-ready image</td></tr>
+          <tr><td>Normalization</td><td>{{ model_info.preprocessing or 'Normalisasi nilai piksel sesuai pipeline training' }}</td><td>Tensor-compatible values</td></tr>
+          <tr><td>Tensor preparation</td><td>Mengonversi citra menjadi tensor</td><td>[1, 224, 224, 3]</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="algo-muted">Preprocessing penting karena model membutuhkan ukuran dan format input yang konsisten. Border besar, noise latar, atau bingkai dekoratif dapat menyebabkan misclassification.</p>
+  </div>
+</section>
+
+{# 6. Model #}
+<section class="algo-section algo-card" id="sec-model">
+  <div class="algo-card-head">
+    <span class="algo-section-num">06</span>
+    <h2 class="algo-card-title">Model dan Input Tensor</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-summary-grid">
+      <div class="algo-kv"><span>Model Source</span><strong>{{ model_info.source }}</strong></div>
+      <div class="algo-kv"><span>Runtime</span><strong>{{ model_info.runtime }}</strong></div>
+      <div class="algo-kv"><span>Model File</span><strong><code>{{ model_info.model_file }}</code></strong></div>
+      <div class="algo-kv"><span>Metadata File</span><strong><code>{{ model_info.metadata_file or '—' }}</code></strong></div>
+      <div class="algo-kv"><span>Weights File</span><strong><code>{{ model_info.weights_file or '—' }}</code></strong></div>
+      <div class="algo-kv"><span>Input Size</span><strong>224 × 224 × 3</strong></div>
+      <div class="algo-kv"><span>Tensor Shape</span><strong>{{ model_info.tensor_shape }}</strong></div>
+      <div class="algo-kv"><span>Output</span><strong>4 probability scores</strong></div>
+    </div>
+  </div>
+</section>
+
+{# 7. Softmax #}
+<section class="algo-section algo-card" id="sec-softmax">
+  <div class="algo-card-head">
+    <span class="algo-section-num">07</span>
+    <h2 class="algo-card-title">Softmax Probability</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-lead-narrative">
+      <p>
+        Softmax mengubah empat skor mentah model menjadi persentase yang mudah dibaca.
+        <strong>Cara membaca tabel:</strong> baris dengan persentase tertinggi = prediksi utama.
+        Jumlah semua baris selalu 100%.
+      </p>
+    </div>
+    <div class="algo-formula-block"><strong>Probabilitas (%)</strong> = Skor Softmax × 100</div>
+    <p class="algo-sample-label"><span class="algo-badge sm">{{ lp.sample_label }}</span>{% if lp.created_at %} · {{ lp.created_at }}{% endif %}</p>
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>Kelas</th><th>Skor Softmax</th><th>Probabilitas</th><th>Peringkat</th></tr></thead>
+        <tbody>
+          {% for row in softmax_rows %}
+          <tr class="{{ 'highlight' if row.rank == 1 else '' }}">
+            <td>{{ row.label }}</td>
+            <td>{{ row.softmax_score_display or ('%.4f'|format(row.softmax_score)) }}</td>
+            <td><strong>{{ row.percent_display or ('%.2f'|format(row.percent) ~ '%') }}</strong></td>
+            <td>{{ row.rank }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if lp.calc and lp.calc.softmax_peaked_note %}
+    <div class="algo-note">
+      <i class="bi bi-info-circle"></i>
+      {{ lp.calc.softmax_peaked_note }}
+    </div>
+    {% endif %}
+    <p class="algo-muted">Kelas dengan probabilitas tertinggi menjadi prediksi utama.</p>
+  </div>
+</section>
+
+{# 8. Ranking #}
+<section class="algo-section algo-card" id="sec-ranking">
+  <div class="algo-card-head">
+    <span class="algo-section-num">08</span>
+    <h2 class="algo-card-title">Ranking Kelas</h2>
+  </div>
+  <div class="algo-card-body">
+    <p>Semua probabilitas kelas diurutkan dari tertinggi ke terendah.</p>
+    <ol class="algo-rank-list">
+      {% for row in softmax_rows|sort(attribute='rank') %}
+      <li><strong>Rank {{ row.rank }}:</strong> {{ row.label }} — {{ '%.2f'|format(row.percent) }}%</li>
+      {% endfor %}
+    </ol>
+    <div class="algo-formula-block">
+      <strong>Predicted Class</strong> = argmax(probability scores)<br>
+      <code>argmax([{% for row in softmax_rows %}{{ '%.2f'|format(row.percent) }}{% if not loop.last %}, {% endif %}{% endfor %}]) = {{ lp.predicted_display }}</code>
+    </div>
+  </div>
+</section>
+
+{# 9. Confidence #}
+<section class="algo-section algo-card" id="sec-confidence">
+  <div class="algo-card-head">
+    <span class="algo-section-num">09</span>
+    <h2 class="algo-card-title">Perhitungan Confidence</h2>
+  </div>
+  <div class="algo-card-body">
+    <p>Confidence adalah probabilitas kelas peringkat pertama (Top-1).</p>
+    <div class="algo-formula-block"><strong>Confidence</strong> = Top-1 Probability</div>
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>Confidence Range</th><th>Category</th><th>Interpretation</th></tr></thead>
+        <tbody>
+          <tr><td>≥ 85%</td><td><span class="algo-status ok">Strong Prediction</span></td><td>Model sangat yakin</td></tr>
+          <tr><td>70% – 84.99%</td><td><span class="algo-status info">Moderate Prediction</span></td><td>Hasil dapat diterima dengan catatan</td></tr>
+          <tr><td>60% – 69.99%</td><td><span class="algo-status warn">Weak Prediction</span></td><td>Review manual disarankan</td></tr>
+          <tr><td>&lt; 60%</td><td><span class="algo-status danger">Low Confidence</span></td><td>Review manual diperlukan</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{# 10. Margin #}
+<section class="algo-section algo-card" id="sec-margin">
+  <div class="algo-card-head">
+    <span class="algo-section-num">10</span>
+    <h2 class="algo-card-title">Perhitungan Top-2 Margin</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-formula-block">
+      <strong>Top-2 Margin</strong> = Top-1 Score − Top-2 Score
+    </div>
+    <div class="algo-calc-example">
+      <p>Top-1 Score = {{ lp.confidence_pct }}% ({{ lp.predicted_display }})</p>
+      <p>Top-2 Score = {{ lp.top2_pct or '—' }}% ({{ lp.top2_display or '—' }})</p>
+      <p><strong>Top-2 Margin = {{ lp.confidence_pct }}% − {{ lp.top2_pct or 0 }}% = {{ lp.margin_pct or '—' }}%</strong></p>
+    </div>
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>Margin</th><th>Interpretation</th></tr></thead>
+        <tbody>
+          <tr><td>≥ 15%</td><td>Strong separation — kelas prediksi dominan</td></tr>
+          <tr><td>10% – 14.99%</td><td>Moderate separation</td></tr>
+          <tr><td>&lt; 10%</td><td>Ambiguous prediction — model bingung antar dua kelas teratas</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{# 11. Validation #}
+<section class="algo-section algo-card" id="sec-validation">
+  <div class="algo-card-head">
+    <span class="algo-section-num">11</span>
+    <h2 class="algo-card-title">Validasi Label Pembanding</h2>
+  </div>
+  <div class="algo-card-body">
+    <p><strong>Sumber expected class:</strong></p>
+    <ol>
+      <li>Manual — dipilih pengguna</li>
+      <li>Filename prefix (mis. <code>naskhi_41.jpg</code>)</li>
+      <li>Dataset label</li>
+      <li>Unknown — tidak tersedia</li>
+    </ol>
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>Condition</th><th>Validation Status</th></tr></thead>
+        <tbody>
+          <tr><td>Predicted = Expected</td><td>Prediction Match</td></tr>
+          <tr><td>Predicted ≠ Expected</td><td>Prediction Mismatch</td></tr>
+          <tr><td>Expected Unknown</td><td>No Expected Class Provided</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="algo-examples">
+      <span><code>naskhi_41.jpg</code> → Naskhi</span>
+      <span><code>diwani_10.jpg</code> → Diwani</span>
+      <span><code>tsuluts_70.jpg</code> → Tsuluts</span>
+      <span><code>random_image.jpg</code> → Unknown</span>
+    </div>
+  </div>
+</section>
+
+{# 12. Unknown class #}
+<section class="algo-section algo-card" id="sec-unknown">
+  <div class="algo-card-head">
+    <span class="algo-section-num">12</span>
+    <h2 class="algo-card-title">Deteksi Kelas Tidak Dikenal / Out-of-Trained-Classes</h2>
+  </div>
+  <div class="algo-card-body">
+    <p>Model hanya mengenal empat kelas terlatih. Citra gaya lain dapat tetap diprediksi ke kelas terdekat.</p>
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>Condition</th><th>Known Class Status</th></tr></thead>
+        <tbody>
+          <tr><td>Confidence ≥ 85% dan Margin ≥ 15%</td><td>Known Class</td></tr>
+          <tr><td>Confidence ≥ 70% dan Margin ≥ 10%</td><td>Likely Known Class</td></tr>
+          <tr><td>Confidence ≥ 60%</td><td>Uncertain Class</td></tr>
+          <tr><td>Confidence &lt; 60% atau Margin &lt; 10%</td><td>Possible Unknown Class</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="algo-note warn">
+      <i class="bi bi-exclamation-triangle"></i>
+      <strong>Possible Unknown Class</strong> tidak berarti citra bukan Khat Arab — melainkan citra mungkin di luar empat kelas terlatih atau confidence model tidak cukup.
+    </div>
+  </div>
+</section>
+
+{# 13. Decision logic #}
+<section class="algo-section algo-card" id="sec-decision">
+  <div class="algo-card-head">
+    <span class="algo-section-num">13</span>
+    <h2 class="algo-card-title">Logika Keputusan Akhir</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-lead-narrative">
+      <p>
+        Keputusan akhir bukan hanya “benar/salah” — sistem memberi label yang memberi tahu
+        apakah hasil boleh dipakai langsung, perlu hati-hati, atau wajib direview manusia.
+      </p>
+    </div>
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>Keputusan</th><th>Aturan (kapan muncul)</th></tr></thead>
+        <tbody>
+          <tr><td><span class="algo-status ok">Diterima</span></td><td>Prediksi cocok dengan label pembanding + Confidence ≥ 85% + Margin ≥ 15%</td></tr>
+          <tr><td><span class="algo-status info">Diterima dengan Catatan</span></td><td>Tidak ada label pembanding, confidence sedang/kuat</td></tr>
+          <tr><td><span class="algo-status info">Review Opsional</span></td><td>Confidence sedang, tidak ada mismatch</td></tr>
+          <tr><td><span class="algo-status warn">Review Manual Disarankan</span></td><td>Confidence lemah atau sumber eksternal tanpa label</td></tr>
+          <tr><td><span class="algo-status danger">Review Manual Wajib</span></td><td>Prediksi ≠ label pembanding, confidence rendah, atau kelas ragu</td></tr>
+          <tr><td><span class="algo-status danger">Ditolak Non-Khat</span></td><td>Tahap 1 mendeteksi bukan kaligrafi Khat</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{# 14. Sample calculation #}
+<section class="algo-section algo-card algo-card-featured" id="sec-sample">
+  <div class="algo-card-head">
+    <span class="algo-section-num">14</span>
+    <h2 class="algo-card-title">Contoh Perhitungan Prediksi Lengkap</h2>
+    <span class="algo-badge sm">{{ lp.sample_label }}</span>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-sample-grid">
+      <div>
+        <h3>Input</h3>
+        <ul class="algo-plain-list">
+          <li><strong>Filename:</strong> {{ lp.filename }}</li>
+          <li><strong>Image Size:</strong> {{ lp.original_size }}</li>
+          <li><strong>Model Input:</strong> {{ lp.model_input }}</li>
+        </ul>
+        <h3>Softmax Output</h3>
+        <ul class="algo-plain-list">
+          {% for row in softmax_rows|sort(attribute='rank') %}
+          <li>{{ row.label }} = {{ '%.2f'|format(row.percent) }}%</li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div>
+        <h3>Perhitungan</h3>
+        <ul class="algo-plain-list">
+          <li><strong>Top-1 Class:</strong> {{ lp.predicted_display }}</li>
+          <li><strong>Top-1 Score:</strong> {{ lp.confidence_pct }}%</li>
+          <li><strong>Top-2 Class:</strong> {{ lp.top2_display or '—' }}</li>
+          <li><strong>Top-2 Score:</strong> {{ lp.top2_pct or '—' }}%</li>
+          <li><strong>Top-2 Margin:</strong> {{ lp.margin_pct or '—' }}%</li>
+        </ul>
+        <h3>Confidence &amp; Validasi</h3>
+        <ul class="algo-plain-list">
+          <li><strong>Confidence Level:</strong> {{ lp.confidence_level or '—' }}</li>
+          <li><strong>Expected Class:</strong> {{ lp.expected_class }}</li>
+          <li><strong>Validation Status:</strong> {{ lp.validation_status }}</li>
+          <li><strong>Final Decision:</strong> <span class="algo-decision-badge">{{ lp.final_decision or '—' }}</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="algo-interpretation">
+      <h3>Interpretasi</h3>
+      <p>{{ lp.interpretation_id or 'Model memprediksi kelas dengan probabilitas tertinggi. Validasi manual disarankan jika tidak ada label pembanding.' }}</p>
+    </div>
+  </div>
+</section>
+
+{# 15. Evaluation #}
+<section class="algo-section algo-card" id="sec-evaluation">
+  <div class="algo-card-head">
+    <span class="algo-section-num">15</span>
+    <h2 class="algo-card-title">Evaluasi Model</h2>
+  </div>
+  <div class="algo-card-body">
+    {% if eval_calculation.available %}
+    <div class="algo-lead-narrative">
+      <p>{{ eval_calculation.intro|safe }}</p>
+    </div>
+    <div class="algo-formula-block">
+      <div><strong>{{ eval_calculation.accuracy_formula }}</strong></div>
+      {% if eval_calculation.accuracy_calculation %}
+      <div>{{ eval_calculation.accuracy_calculation }}</div>
+      {% endif %}
+    </div>
+    <ul class="algo-narrative-list">
+      <li>{{ eval_calculation.precision_note }}</li>
+      <li>{{ eval_calculation.recall_note }}</li>
+      <li>{{ eval_calculation.f1_note }}</li>
+      <li>{{ eval_calculation.target_note }}</li>
+    </ul>
+    {% if eval_calculation.split_formulas %}
+    <div class="algo-formula-block mt-3">
+      <div><strong>Pembagian Dataset (berdasarkan data aktual)</strong></div>
+      {% for item in eval_calculation.split_formulas %}
+      <div class="mt-2">
+        <div><strong>{{ item.title }}</strong></div>
+        <div><code>{{ item.expression }}</code></div>
+        <div class="algo-muted">{{ item.detail }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="algo-kpi-row">
+      <div class="algo-kpi"><span>Akurasi</span><strong>{{ ev.accuracy_pct }}%</strong></div>
+      <div class="algo-kpi"><span>Presisi (weighted)</span><strong>{{ ev.precision_pct }}%</strong></div>
+      <div class="algo-kpi"><span>Recall (weighted)</span><strong>{{ ev.recall_pct }}%</strong></div>
+      <div class="algo-kpi"><span>F1 (weighted)</span><strong>{{ ev.f1_pct }}%</strong></div>
+      {% if ev.f1_macro_pct %}
+      <div class="algo-kpi"><span>F1 (macro)</span><strong>{{ ev.f1_macro_pct }}%</strong></div>
+      {% endif %}
+      <div class="algo-kpi"><span>Total Uji</span><strong>{{ ev.test_samples or '—' }}</strong></div>
+      <div class="algo-kpi ok"><span>Benar</span><strong>{{ ev.correct_predictions or '—' }}</strong></div>
+      <div class="algo-kpi warn"><span>Salah</span><strong>{{ ev.incorrect_predictions or '—' }}</strong></div>
+    </div>
+    {% if ev.target_achieved %}
+    <div class="algo-note ok"><i class="bi bi-check-circle"></i> Target riset {{ ev.target_pct }}% tercapai.</div>
+    {% endif %}
+    {% else %}
+    <div class="algo-empty"><i class="bi bi-clipboard-data"></i><p>{{ eval_calculation.intro }}</p></div>
+    {% endif %}
+  </div>
+</section>
+
+{# 16. Confusion matrix — placeholder fix: remove duplicate endif #}
+<section class="algo-section algo-card" id="sec-confusion">
+  <div class="algo-card-head">
+    <span class="algo-section-num">16</span>
+    <h2 class="algo-card-title">Confusion Matrix</h2>
+  </div>
+  <div class="algo-card-body">
+    <p>Confusion matrix menunjukkan berapa banyak citra dari setiap true class diprediksi sebagai setiap kelas.</p>
+    {% if cm.available %}
+    <div class="algo-table-wrap">
+      <table class="algo-table algo-cm-table">
+        <thead>
+          <tr>
+            <th>True \ Predicted</th>
+            {% for label in cm.labels %}<th>{{ label }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in range(cm.matrix|length) %}
+          <tr>
+            <th>{{ cm.labels[i] }}</th>
+            {% for j in range(cm.matrix[i]|length) %}
+            {% set val = cm.matrix[i][j] %}
+            {% set is_diag = i == j %}
+            <td class="{% if is_diag and val > 0 %}diag{% elif is_diag %}diag zero{% elif val > 0 %}off-diag{% else %}zero{% endif %}">{% if val > 0 %}{{ val }}{% else %}<span class="cm-empty" aria-hidden="true">—</span>{% endif %}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="algo-muted"><strong>Diagonal</strong> = prediksi benar · <strong>Off-diagonal</strong> = misclassification. {{ cm.interpretation.message }}</p>
+    {% else %}
+    <div class="algo-empty"><p>Confusion matrix belum tersedia. Jalankan evaluasi model.</p></div>
+    {% endif %}
+  </div>
+</section>
+
+{# 17. Metrics detail #}
+<section class="algo-section algo-card" id="sec-metrics">
+  <div class="algo-card-head">
+    <span class="algo-section-num">17</span>
+    <h2 class="algo-card-title">Precision, Recall, dan F1-Score</h2>
+  </div>
+  <div class="algo-card-body">
+    <p>Metrik per kelas dihitung dari confusion matrix pada holdout test set. Presisi mengukur ketepatan prediksi positif; recall mengukur kemampuan mendeteksi kelas sebenarnya; F1 menggabungkan keduanya.</p>
+    {% if ev.available %}
+    <div class="algo-summary-grid">
+      <div class="algo-kv"><span>Weighted Precision</span><strong>{{ ev.precision_pct }}%</strong></div>
+      <div class="algo-kv"><span>Weighted Recall</span><strong>{{ ev.recall_pct }}%</strong></div>
+      <div class="algo-kv"><span>Weighted F1</span><strong>{{ ev.f1_pct }}%</strong></div>
+      <div class="algo-kv"><span>Macro F1</span><strong>{{ ev.f1_macro_pct or '—' }}{% if ev.f1_macro_pct %}%{% endif %}</strong></div>
+      <div class="algo-kv"><span>Target Riset</span><strong>{{ accuracy_target_pct }}%</strong></div>
+    </div>
+    {% if em.available and em.per_class_rows %}
+    <div class="algo-table-wrap mt-3">
+      <table class="algo-table">
+        <thead>
+          <tr>
+            <th>Kelas</th>
+            <th>Support (uji)</th>
+            <th>Precision</th>
+            <th>Recall</th>
+            <th>F1-Score</th>
+            <th>Akurasi Kelas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in em.per_class_rows %}
+          <tr>
+            <td>{{ row.display }}</td>
+            <td>{{ row.support_eval or row.test_count }}</td>
+            <td>{{ row.precision_pct or '—' }}{% if row.precision_pct %}%{% endif %}</td>
+            <td>{{ row.recall_pct or '—' }}{% if row.recall_pct %}%{% endif %}</td>
+            <td>{{ row.f1_pct or '—' }}{% if row.f1_pct %}%{% endif %}</td>
+            <td>{{ row.class_accuracy_pct or '—' }}{% if row.class_accuracy_pct %}%{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if em.accuracy_formula %}
+    <p class="algo-muted mt-2"><strong>Rumus akurasi:</strong> {{ em.accuracy_formula }}</p>
+    {% endif %}
+    {% endif %}
+    {% else %}
+    <div class="algo-empty"><p>Metrik evaluasi belum tersedia.</p></div>
+    {% endif %}
+  </div>
+</section>
+
+{# 18. Error pairs #}
+<section class="algo-section algo-card" id="sec-errors">
+  <div class="algo-card-head">
+    <span class="algo-section-num">18</span>
+    <h2 class="algo-card-title">Analisis Kesalahan Prediksi</h2>
+  </div>
+  <div class="algo-card-body">
+    {% if ep.available %}
+    <div class="algo-table-wrap">
+      <table class="algo-table">
+        <thead><tr><th>True Class</th><th>Predicted Class</th><th>Count</th><th>% of Errors</th></tr></thead>
+        <tbody>
+          {% for pair in ep.pairs %}
+          <tr>
+            <td>{{ pair.true_display }}</td>
+            <td>{{ pair.predicted_display }}</td>
+            <td><strong>{{ pair.count }}</strong></td>
+            <td>{{ pair.percentage or '—' }}{% if pair.percentage %}%{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="algo-muted">Pasangan error paling sering mengindikasikan overlap visual atau sampel diskriminatif yang belum cukup.</p>
+    <ul class="algo-reco-list">
+      <li>Review label untuk kelas yang sering tertukar</li>
+      <li>Tambahkan sampel spesifik kelas</li>
+      <li>Perbaiki preprocessing</li>
+      <li>Seimbangkan dataset</li>
+      <li>Retrain model {% if model_info.is_teachable_machine %}di Teachable Machine{% else %}dengan pipeline Keras (EfficientNetB0){% endif %}</li>
+    </ul>
+    {% else %}
+    <div class="algo-empty"><p>Analisis pasangan error belum tersedia. Jalankan evaluasi model.</p></div>
+    {% endif %}
+  </div>
+</section>
+
+{# 19. Dataset influence #}
+<section class="algo-section algo-card" id="sec-dataset">
+  <div class="algo-card-head">
+    <span class="algo-section-num">19</span>
+    <h2 class="algo-card-title">Pengaruh Dataset terhadap Algoritma</h2>
+  </div>
+  <div class="algo-card-body">
+    <ul class="algo-plain-list">
+      <li><strong>Dataset seimbang</strong> — mengurangi bias prediksi ke kelas dominan</li>
+      <li><strong>Label salah</strong> — menurunkan akurasi dan confidence yang valid</li>
+      <li><strong>Duplikasi</strong> — menimbulkan overfitting dan confidence palsu</li>
+      <li><strong>Variasi eksternal</strong> — citra di luar distribusi training sulit diprediksi</li>
+      <li><strong>Border/dekorasi</strong> — dapat mengganggu fitur kaligrafi inti</li>
+    </ul>
+    <div class="algo-kpi-row">
+      <div class="algo-kpi"><span>Total Citra (raw)</span><strong>{{ ds.total_raw or ds.total_database }}</strong></div>
+      <div class="algo-kpi"><span>Diproses</span><strong>{{ ds.processed_total or sm.processed or '—' }}</strong></div>
+      <div class="algo-kpi"><span>Train</span><strong>{{ ds.train_count or sm.train_count or '—' }}</strong></div>
+      <div class="algo-kpi"><span>Validation</span><strong>{{ ds.validation_count or sm.validation_count or '—' }}</strong></div>
+      <div class="algo-kpi"><span>Test (holdout)</span><strong>{{ ds.test_count or sm.test_count or '—' }}</strong></div>
+      {% for cls, count in ds.per_class.items() %}
+      <div class="algo-kpi"><span>{{ cls }} (raw)</span><strong>{{ count }}</strong></div>
+      {% endfor %}
+    </div>
+    {% if sm.formulas %}
+    <div class="algo-formula-block mt-3">
+      <div><strong>Perhitungan split dataset</strong></div>
+      {% for item in sm.formulas %}
+      <div class="mt-2">
+        <div><strong>{{ item.title }}</strong></div>
+        <div><code>{{ item.expression }}</code></div>
+        <div class="algo-muted">{{ item.detail }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if ds.class_rows %}
+    <div class="algo-table-wrap mt-3">
+      <table class="algo-table">
+        <thead>
+          <tr>
+            <th>Kelas</th>
+            <th>Raw</th>
+            <th>Train</th>
+            <th>Validation</th>
+            <th>Test</th>
+            <th>Class Weight</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in ds.class_rows %}
+          <tr>
+            <td>{{ row.display }}</td>
+            <td>{{ row.raw_count }}</td>
+            <td>{{ row.train_count }}</td>
+            <td>{{ row.validation_count }}</td>
+            <td>{{ row.test_count }}</td>
+            <td>{{ row.class_weight }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% if ds.imbalance_warning %}
+    <div class="algo-note warn"><i class="bi bi-exclamation-triangle"></i> {{ ds.imbalance_warning }}</div>
+    {% endif %}
+    <p class="algo-muted">Target rekomendasi: <strong>{{ ds.recommended_min }}–{{ ds.recommended_max }}</strong> citra per kelas, seimbang di semua kelas.</p>
+  </div>
+</section>
+
+{# 20. Thesis interpretation #}
+<section class="algo-section algo-card algo-card-thesis" id="sec-thesis">
+  <div class="algo-card-head">
+    <span class="algo-section-num">20</span>
+    <h2 class="algo-card-title">Interpretasi Akademik untuk Penelitian Skripsi</h2>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-thesis-text">
+      <p>
+        Sistem klasifikasi Khat Arab menggunakan model citra berbasis Convolutional Neural Network (CNN)
+        dengan arsitektur <strong>{{ model_info.architecture_label or model_info.source }}</strong>
+        ({% if model_info.is_teachable_machine %}TensorFlow.js / Teachable Machine{% else %}TensorFlow / Keras transfer learning{% endif %}).
+        Dataset penelitian terdiri dari <strong>{{ ds.processed_total or sm.processed or ds.total_raw }}</strong> citra
+        ({{ ds.per_class|length }} kelas, masing-masing {{ (ds.total_raw // (ds.per_class|length)) if ds.total_raw and ds.per_class else '—' }} citra per kelas pada folder raw),
+        dibagi menjadi data latih <strong>{{ ds.train_data_count or sm.train_data_count or (ds.train_count + ds.validation_count) }}</strong>
+        ({{ ds.train_data_pct or sm.train_data_pct }}%) dan holdout test <strong>{{ ds.test_count or sm.test_count }}</strong>
+        ({{ ds.test_data_pct or sm.test_data_pct }}%).
+        Citra masukan diproses menjadi ukuran 224 × 224 piksel dengan {{ model_info.preprocessing }},
+        kemudian model menghasilkan distribusi probabilitas untuk empat kelas khat:
+        {% for label in model_info.labels %}{{ label }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      </p>
+      <p>
+        Kelas dengan probabilitas tertinggi (<em>argmax</em>) ditetapkan sebagai prediksi utama.
+        Untuk meningkatkan validitas hasil, sistem tidak hanya menampilkan kelas prediksi, tetapi juga
+        menghitung <strong>confidence</strong> (probabilitas Top-1), <strong>margin Top-2</strong>
+        (selisih dua probabilitas tertinggi), status validasi label pembanding (<em>expected class</em>),
+        serta keputusan akhir seperti <em>Accepted</em>, <em>Accepted with Caution</em>, atau
+        <em>Manual Review Required</em>.
+      </p>
+      <p>
+        Evaluasi model dilakukan pada holdout test set sebanyak <strong>{{ ev.test_samples or sm.test_count or '—' }}</strong> citra
+        dengan akurasi <strong>{{ ev.accuracy_pct or '—' }}{% if ev.accuracy_pct %}%{% endif %}</strong>,
+        presisi weighted <strong>{{ ev.precision_pct or '—' }}{% if ev.precision_pct %}%{% endif %}</strong>,
+        recall weighted <strong>{{ ev.recall_pct or '—' }}{% if ev.recall_pct %}%{% endif %}</strong>,
+        dan F1-score weighted <strong>{{ ev.f1_pct or '—' }}{% if ev.f1_pct %}%{% endif %}</strong>.
+        Confusion matrix dan analisis pasangan error digunakan untuk mengidentifikasi kelas yang sering
+        tertukar. Temuan ini mendukung pembahasan metodologi dan hasil penelitian skripsi terkait
+        kinerja model, kualitas dataset, dan interpretabilitas keputusan algoritma.
+      </p>
+    </div>
+  </div>
+</section>
+
+{# 21. Limitations #}
+<section class="algo-section algo-card" id="sec-limitations">
+  <div class="algo-card-head">
+    <span class="algo-section-num">21</span>
+    <h2 class="algo-card-title">Catatan Batasan Sistem</h2>
+  </div>
+  <div class="algo-card-body">
+    <ul class="algo-limit-list">
+      <li>Sistem hanya mengenali empat kelas terlatih.</li>
+      <li>Citra di luar kelas terlatih dapat dipaksa ke kelas terdekat (<em>forced prediction</em>).</li>
+      <li>Confidence tinggi tidak selalu berarti prediksi benar — label salah atau overlap visual tetap mungkin.</li>
+      <li>Ketidakseimbangan dataset dapat memengaruhi distribusi probabilitas.</li>
+      <li>{% if model_info.is_teachable_machine %}Teachable Machine tidak mengekspos perhitungan internal layer-by-layer di aplikasi ini.{% else %}Detail perhitungan internal layer EfficientNetB0 tidak ditampilkan di aplikasi ini — hanya output softmax dan metrik evaluasi.{% endif %}</li>
+      <li>Review manual tetap diperlukan untuk prediksi ambigu atau mismatch label.</li>
+    </ul>
+  </div>
+</section>

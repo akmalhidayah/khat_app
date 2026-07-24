@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% block title %}Klasifikasi Gambar Khat{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/classification.css') }}">
+{% if global_is_teachable_machine %}
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+{% set simple_mode = simple_mode if simple_mode is defined else false %}
+{% set arch_label = global_model_architecture if global_is_teachable_machine and not simple_mode else (model_ctx.model_architecture if model_ctx else 'CNN') %}
+{% set is_demo = model_ctx and model_ctx.is_demo_model %}
+{% set is_research = model_ctx and model_ctx.is_research_model %}
+{% set accept_pct = (khat_thresholds.accept * 100)|round(0) %}
+{% set reject_pct = (khat_thresholds.reject * 100)|round(0) %}
+
+<div class="classify-v2" data-tm-active="{{ '1' if global_is_teachable_machine else '0' }}">
+
+  {# ── Header ── #}
+  <header class="classify-v2-header">
+    <div class="classify-v2-header-text">
+      <h1 class="classify-v2-title">Klasifikasi Gambar Khat Arab</h1>
+      <p class="classify-v2-subtitle">Unggah citra kaligrafi Arab (JPG/PNG) atau ambil foto langsung dari kamera. Sistem memproses gambar dengan model CNN dan menampilkan jenis khat beserta confidence.</p>
+    </div>
+    <div class="classify-v2-badges">
+      {% if simple_mode %}
+      <span class="classify-v2-badge ok"><i class="bi bi-cpu"></i> Model CNN Aktif</span>
+      {% elif global_is_teachable_machine %}
+      <span class="classify-v2-badge ok"><i class="bi bi-cpu"></i> Active Model: Teachable Machine</span>
+      {% elif is_research %}
+      <span class="classify-v2-badge ok"><i class="bi bi-mortarboard"></i> Mode Riset Aktif</span>
+      {% elif is_demo %}
+      <span class="classify-v2-badge warn"><i class="bi bi-lightning-charge"></i> Model Demo</span>
+      {% elif model_exists %}
+      <span class="classify-v2-badge neutral"><i class="bi bi-cpu"></i> Model Siap</span>
+      {% else %}
+      <span class="classify-v2-badge danger"><i class="bi bi-x-circle"></i> Model Belum Ada</span>
+      {% endif %}
+      <span class="classify-v2-badge {{ 'ok' if detector_available else 'warn' }}">
+        <i class="bi bi-shield-check"></i> Detektor {{ 'Aktif' if detector_available else 'Off' }}
+      </span>
+      {% if model_ctx and model_ctx.using_best_model %}
+      <span class="classify-v2-badge info"><i class="bi bi-award"></i> Model Terbaik</span>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if not simple_mode and not global_is_teachable_machine %}
+  <div class="classify-v2-alert warn">
+    <span><i class="bi bi-exclamation-triangle me-1"></i>Teachable Machine model files were not found in <code>static/model/</code>. The system is using the Keras research model instead. Install TM files with: <code>cp ~/Downloads/tm-my-image-model.zip . && python3 scripts/setup_teachable_machine_model.py</code></span>
+  </div>
+  {% endif %}
+
+  {% if is_demo %}
+  <div class="classify-v2-alert warn" id="demoModelCard">
+    <span><i class="bi bi-exclamation-triangle me-1"></i>Model demo — hasil hanya untuk uji alur. Gunakan Mode Riset Akurasi untuk hasil final.</span>
+    <a href="{{ url_for('model_management.model_management_page') }}" class="btn btn-sm btn-warning">Manajemen Model</a>
+    <button type="button" class="btn btn-sm btn-link text-muted" id="dismissDemoWarning" title="Tutup">×</button>
+  </div>
+  {% endif %}
+
+  {# ── Compact status strip ── #}
+  <section class="classify-v2-strip">
+    <div class="classify-v2-strip-item">
+      <span class="strip-label">Model</span>
+      <strong>{{ 'Tersedia' if model_exists else 'Tidak ada' }}</strong>
+      <small>{{ (model_ctx.model_name if model_ctx and model_ctx.model_name else model_name) or '—' }} · {{ arch_label }}</small>
+    </div>
+    <div class="classify-v2-strip-item">
+      <span class="strip-label">Kelas</span>
+      <strong>{{ trained_class_labels|length if trained_class_labels else (class_labels|length) }} Khat</strong>
+      <small>{% for slug in (trained_class_labels or class_labels.keys()|list) %}{{ class_labels.get(slug, slug.replace('_', ' ').title()) }}{% if not loop.last %} · {% endif %}{% else %}Naskhi · Diwani · Diwani Jali · Tsuluts{% endfor %}</small>
+    </div>
+    <div class="classify-v2-strip-item">
+      <span class="strip-label">Detektor</span>
+      <strong>{{ 'Aktif' if detector_available else 'Off' }}</strong>
+      <small>Accept ≥{{ accept_pct }}% · Reject &lt;{{ reject_pct }}%</small>
+    </div>
+    <div class="classify-v2-strip-item">
+      <span class="strip-label">Output</span>
+      <strong>Kelas + Confidence</strong>
+      <small>Tersimpan ke riwayat</small>
+    </div>
+  </section>
+
+  {# ── Main: upload + preview ── #}
+  <div class="classify-v2-main">
+    <section class="classify-v2-card classify-v2-upload">
+      <div class="classify-v2-card-head">
+        <span><i class="bi bi-cloud-arrow-up"></i> Unggah Gambar Kaligrafi</span>
+        <small class="text-muted">JPG · JPEG · PNG{% if not simple_mode %} · WEBP{% endif %} · Kamera · max 10 MB</small>
+      </div>
+      <div class="classify-v2-card-body">
+        <form method="post" enctype="multipart/form-data" id="classifyForm" novalidate>
+          <div class="classify-v2-dropzone" id="uploadDropzone">
+            <div class="classify-v2-drop-icon"><i class="bi bi-cloud-arrow-up"></i></div>
+            <p class="classify-v2-drop-title">Seret &amp; lepas gambar di sini</p>
+            <p class="classify-v2-drop-or">atau</p>
+            <div class="classify-v2-drop-actions">
+              <button type="button" class="btn btn-emerald btn-sm" id="browseImageBtn">
+                <i class="bi bi-folder2-open me-1"></i> Pilih Gambar
+              </button>
+              <button type="button" class="btn btn-outline-emerald btn-sm" id="cameraCaptureBtn">
+                <i class="bi bi-camera me-1"></i> Ambil Foto
+              </button>
+            </div>
+            <input id="classifyImageInput" type="file" name="image" accept=".jpg,.jpeg,.png,image/jpeg,image/png{% if not simple_mode %},.webp,image/webp{% endif %}" class="visually-hidden" tabindex="-1">
+            <input id="classifyCameraFallbackInput" type="file" accept="image/*" capture="environment" class="visually-hidden" tabindex="-1">
+          </div>
+
+          <div class="invalid-note d-none" id="invalidTypeNote" role="alert"></div>
+
+          {% if not simple_mode %}
+          <div class="classify-v2-options mt-3">
+            <label class="classify-v2-field-label" for="manualExpectedClass">
+              <i class="bi bi-tag me-1"></i> Expected Class / Label Pembanding
+            </label>
+            <select class="form-select form-select-sm classify-v2-select" name="manual_expected_class" id="manualExpectedClass">
+              <option value="unknown" selected>Unknown</option>
+              {% for slug in (trained_class_labels or class_labels.keys()|list) %}
+              <option value="{{ slug }}">{{ class_labels.get(slug, slug.replace('_', ' ').title()) }}</option>
+              {% endfor %}
+            </select>
+            <small class="text-muted d-block mt-1">
+              Opsional — untuk gambar eksternal tanpa prefix nama file. Digunakan memvalidasi prediksi model.
+            </small>
+          </div>
+          {% endif %}
+
+          <div class="classify-v2-form-actions">
+            <button type="submit" class="btn classify-btn classify-v2-submit" id="classifySubmitBtn" disabled>
+              <i class="bi bi-image me-2"></i><span>Pilih Gambar Dulu</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="classify-v2-card classify-v2-preview">
+      <div class="classify-v2-card-head"><span><i class="bi bi-image"></i> Pratinjau Gambar</span></div>
+      <div class="classify-v2-card-body">
+        <div class="classify-v2-preview-empty" id="previewEmpty">
+          <i class="bi bi-image"></i>
+          <h6>Belum Ada Gambar</h6>
+          <p>Pratinjau muncul setelah memilih file.</p>
+        </div>
+        <div class="classify-v2-preview-panel d-none" id="previewWrap">
+          <div class="classify-v2-preview-frame">
+            <img id="previewImage" alt="Pratinjau">
+          </div>
+          <div class="classify-v2-preview-meta file-meta d-none" id="fileMeta">
+            <div class="fw-semibold text-truncate" id="fileName">—</div>
+            <div class="classify-v2-meta-grid">
+              <span>Tipe: <strong id="fileType">—</strong></span>
+              <span>Ukuran: <strong id="fileSize">—</strong></span>
+              <span>Dimensi: <strong id="fileDimensions">—</strong></span>
+            </div>
+          </div>
+          <div class="classify-v2-preview-actions">
+            <span class="ready-note"><i class="bi bi-check-circle-fill"></i> Siap divalidasi</span>
+            <div class="classify-v2-preview-btns">
+              <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="clearFileBtn">
+                <i class="bi bi-x-circle me-1"></i> Hapus
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm d-none" id="previewZoomBtn">
+                <i class="bi bi-arrows-fullscreen"></i> Perbesar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  {# ── Compact input rules ── #}
+  <section class="classify-v2-rules">
+    <div class="classify-v2-rules-head"><i class="bi bi-list-check"></i> Aturan Input</div>
+    <div class="classify-v2-rules-body">
+      <div class="classify-v2-chip-row">
+        <span class="chip-label ok">Diterima</span>
+        {% for slug in (trained_class_labels or class_labels.keys()|list) %}
+        <span class="class-pill {{ slug }}">{{ class_labels.get(slug, slug.replace('_', ' ').title()) }}</span>
+        {% endfor %}
+      </div>
+      <div class="classify-v2-chip-row mt-2">
+        <span class="chip-label danger">Ditolak</span>
+        <span class="classify-v2-chip">Khat lain (luar dataset)</span>
+        <span class="classify-v2-chip">Screenshot</span>
+        <span class="classify-v2-chip">UI / Foto acak</span>
+        <span class="classify-v2-chip">Logo &amp; dokumen</span>
+        <span class="classify-v2-chip">Grafik / non-kaligrafi</span>
+      </div>
+      {% if not simple_mode %}
+      <p class="classify-v2-detector-line mb-0 mt-2">
+        <i class="bi bi-sliders"></i>
+        Detektor Stage 1: Terima ≥{{ accept_pct }}% · Tolak &lt;{{ accept_pct }}%
+        (foto / non-kaligrafi / di luar 4 kelas selalu ditolak)
+      </p>
+      {% else %}
+      <p class="classify-v2-detector-line mb-0 mt-2">
+        <i class="bi bi-shield-check"></i>
+        Gate otomatis: hanya khat Naskhi / Diwani / Diwani Jali / Tsuluts yang diterima
+      </p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ── Collapsible advanced sections ── #}
+  {% if not simple_mode %}
+  <div class="classify-v2-accordions">
+
+    <details class="classify-v2-acc">
+      <summary><i class="bi bi-gear"></i> Opsi Lanjutan</summary>
+      <div class="classify-v2-acc-body">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" name="manuscript_mode" value="1" id="manuscriptMode" form="classifyForm">
+          <label class="form-check-label" for="manuscriptMode">
+            <strong>Gunakan preprocessing dokumen / manuscript mode</strong>
+            <small class="d-block text-muted">Mode ini membantu memfokuskan model pada area tulisan, bukan bingkai atau dekorasi.</small>
+          </label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="use_tta" value="1" id="useTta" form="classifyForm">
+          <label class="form-check-label" for="useTta">
+            <strong>Test-Time Augmentation (TTA)</strong>
+            <small class="d-block text-muted">Varian gambar ringan untuk prediksi lebih stabil.</small>
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <details class="classify-v2-acc">
+      <summary><i class="bi bi-shield-check"></i> Aturan Validasi Teknis</summary>
+      <div class="classify-v2-acc-body">
+        <ul class="classify-v2-val-list mb-0">
+          <li><span class="val-chip accept">≥ {{ accept_pct }}%</span> Khat — lanjut klasifikasi 4 kelas</li>
+          <li><span class="val-chip reject">&lt; {{ accept_pct }}%</span> Non-Khat / tidak pasti — ditolak (tanpa label kelas)</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="classify-v2-acc">
+      <summary><i class="bi bi-camera"></i> Kualitas Gambar Disarankan</summary>
+      <div class="classify-v2-acc-body">
+        <ul class="classify-v2-checklist mb-0">
+          <li><i class="bi bi-check2"></i>Gambar kaligrafi jelas, satu subjek utama</li>
+          <li><i class="bi bi-check2"></i>Background minimal, tidak blur</li>
+          <li><i class="bi bi-x"></i>Bukan screenshot halaman web ini</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="classify-v2-acc">
+      <summary><i class="bi bi-diagram-3"></i> Alur Prediksi AI</summary>
+      <div class="classify-v2-acc-body">
+        <div class="classify-v2-flow">
+          <span><i class="bi bi-upload"></i> Unggah</span>
+          <span class="flow-arrow">→</span>
+          <span><i class="bi bi-shield-check"></i> Deteksi Khat</span>
+          <span class="flow-arrow">→</span>
+          <span><i class="bi bi-tags"></i> Klasifikasi</span>
+          <span class="flow-arrow">→</span>
+          <span><i class="bi bi-percent"></i> Confidence</span>
+          <span class="flow-arrow">→</span>
+          <span><i class="bi bi-clock-history"></i> Riwayat</span>
+        </div>
+      </div>
+    </details>
+
+    {% if is_demo or (model_ctx and not is_research) %}
+    <details class="classify-v2-acc">
+      <summary><i class="bi bi-mortarboard"></i> Detail Model Riset</summary>
+      <div class="classify-v2-acc-body">
+        <p class="mb-2 small">Model prediksi aktif berasal dari <strong>Teachable Machine</strong>. Untuk meningkatkan akurasi, perbaiki dataset lalu training ulang di Teachable Machine dan upload model baru.</p>
+        <a href="{{ url_for('model_management.model_management_page') }}" class="btn btn-outline-primary btn-sm">Buka Manajemen Model</a>
+      </div>
+    </details>
+    {% endif %}
+
+  </div>
+  {% endif %}
+
+</div>
+
+<div class="modal fade" id="classifyCameraModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content classify-v2-camera-modal">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-camera me-1"></i> Ambil Foto Kaligrafi</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+      </div>
+      <div class="modal-body">
+        <div class="classify-v2-camera-stage" id="classifyCameraStage">
+          <video id="classifyCameraVideo" autoplay playsinline muted aria-label="Pratinjau kamera"></video>
+          <canvas id="classifyCameraCanvas" class="visually-hidden" aria-hidden="true"></canvas>
+          <div class="classify-v2-camera-placeholder d-none" id="classifyCameraPlaceholder">
+            <i class="bi bi-camera-video-off"></i>
+            <p id="classifyCameraPlaceholderText">Kamera tidak tersedia.</p>
+          </div>
+        </div>
+        <p class="classify-v2-camera-hint mb-0">
+          Posisikan kaligrafi di tengah frame. Foto akan dikonversi ke JPEG dan siap diklasifikasi.
+        </p>
+        <div class="invalid-note mt-2 d-none" id="classifyCameraError" role="alert"></div>
+        <div class="classify-v2-camera-fallback d-none" id="classifyCameraFallbackWrap">
+          <button type="button" class="btn btn-outline-emerald btn-sm" id="classifyCameraFallbackBtn">
+            <i class="bi bi-camera-reels me-1"></i> Buka Kamera Sistem
+          </button>
+          <small class="text-muted d-block mt-1">Alternatif jika pratinjau live tidak tersedia di browser ini.</small>
+        </div>
+      </div>
+      <div class="modal-footer classify-v2-camera-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn btn-outline-primary btn-sm d-none" id="classifyCameraRetryBtn">
+          <i class="bi bi-arrow-clockwise me-1"></i> Coba Lagi
+        </button>
+        <button type="button" class="btn btn-outline-primary btn-sm d-none" id="classifyCameraSwitchBtn">
+          <i class="bi bi-arrow-repeat me-1"></i> Ganti Kamera
+        </button>
+        <button type="button" class="btn btn-emerald btn-sm" id="classifyCameraSnapBtn" disabled>
+          <i class="bi bi-camera-fill me-1"></i> Ambil &amp; Gunakan
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="classifyPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-image me-1"></i> Pratinjau Gambar</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center studio-modal-preview">
+        <img id="classifyPreviewModalImg" alt="Pratinjau penuh">
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+{% if global_is_teachable_machine %}
+<script src="{{ url_for('static', filename='js/teachable_machine_client.js') }}"></script>
+{% endif %}
+<script src="{{ url_for('static', filename='js/classify.js') }}"></script>
+{% endblock %}

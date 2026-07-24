@@ -1,0 +1,19 @@
+Flask
+Flask-SQLAlchemy
+PyMySQL
+python-dotenv
+Werkzeug
+tensorflow>=2.20.0; python_version >= "3.13"
+tensorflow==2.15.0; python_version < "3.13"
+tensorflowjs>=4.22.0
+h5py>=3.11.0
+numpy
+pandas
+Pillow
+opencv-python
+scikit-learn
+matplotlib
+seaborn
+
+# Windows users: run installer/install_windows.bat for automated setup.
+# See installer/requirements_windows.txt for the same list with notes.

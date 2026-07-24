@@ -1,0 +1,81 @@
+{# Perhitungan langkah demi langkah — narasi lengkap dengan angka aktual #}
+{% set lp = latest_prediction %}
+
+<section class="algo-section algo-card algo-card-featured" id="sec-walkthrough">
+  <div class="algo-card-head">
+    <span class="algo-section-num"><i class="bi bi-calculator"></i></span>
+    <div>
+      <h2 class="algo-card-title">Perhitungan Lengkap — Langkah demi Langkah</h2>
+      <p class="algo-card-sub mb-0">
+        {{ lp.sample_label }}
+        {% if lp.created_at %}· {{ lp.created_at }}{% endif %}
+        {% if lp.is_example %} (data contoh){% endif %}
+      </p>
+    </div>
+  </div>
+  <div class="algo-card-body">
+    <div class="algo-lead-narrative">
+      <p>
+        Bagian ini menjelaskan <strong>satu siklus prediksi utuh</strong> dari masukan gambar hingga keputusan akhir.
+        Setiap langkah disertai rumus, perhitungan angka, dan kesimpulan agar mudah diikuti untuk dokumentasi skripsi.
+        File contoh: <strong>{{ lp.filename }}</strong>.
+      </p>
+    </div>
+
+    {% if lp.summary_grid %}
+    <div class="algo-quick-summary">
+      <h3 class="algo-subtitle">Ringkasan Hasil Prediksi</h3>
+      <div class="algo-summary-grid">
+        {% for item in lp.summary_grid %}
+        <div class="algo-kv">
+          <span>{{ item.label }}</span>
+          <strong>{{ item.value }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="algo-walkthrough">
+      {% for block in detailed_walkthrough %}
+      <article class="algo-walk-block">
+        <div class="algo-walk-head">
+          <span class="algo-walk-num">{{ block.step }}</span>
+          <h3 class="algo-walk-title">{{ block.title }}</h3>
+        </div>
+        <p class="algo-walk-narrative">{{ block.narrative|safe }}</p>
+        {% if block.bullets %}
+        <ul class="algo-walk-bullets">
+          {% for bullet in block.bullets %}
+          <li>{{ bullet|safe }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if block.formula %}
+        <div class="algo-formula-block algo-formula-inline">
+          <span class="algo-formula-label">Rumus</span>
+          <div>{{ block.formula }}</div>
+        </div>
+        {% endif %}
+        {% if block.calculation %}
+        <div class="algo-calc-box">
+          <span class="algo-calc-label">Perhitungan</span>
+          <p>{{ block.calculation|safe }}</p>
+        </div>
+        {% endif %}
+        <div class="algo-walk-result">
+          <i class="bi bi-check2-circle"></i>
+          <div><strong>Kesimpulan:</strong> {{ block.result|safe }}</div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    {% if lp.interpretation_id %}
+    <div class="algo-final-interpretation">
+      <h3 class="algo-subtitle"><i class="bi bi-chat-square-text me-1"></i>Interpretasi Akhir</h3>
+      <p>{{ lp.interpretation_id }}</p>
+    </div>
+    {% endif %}
+  </div>
+</section>

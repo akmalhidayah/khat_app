@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" fill="none">
+  <rect width="120" height="120" rx="12" fill="#f1f5f9"/>
+  <rect x="24" y="28" width="72" height="54" rx="8" stroke="#94a3b8" stroke-width="2" fill="#e2e8f0"/>
+  <circle cx="42" cy="46" r="6" fill="#94a3b8"/>
+  <path d="M30 72L48 54L62 68L78 50L90 72" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="60" y="100" text-anchor="middle" fill="#64748b" font-family="system-ui,sans-serif" font-size="10">No preview</text>
+</svg>

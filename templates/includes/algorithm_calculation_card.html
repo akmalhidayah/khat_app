@@ -1,0 +1,217 @@
+{# Detail Perhitungan Algoritma — always visible collapsible card #}
+{% set calc = algorithm_calc if algorithm_calc is defined and algorithm_calc else {} %}
+<section class="card classify-card algorithm-calc-card mb-3" id="algorithmCalcSection" data-result-id="{{ result.id }}">
+  <div class="card-header algorithm-calc-header py-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 w-100">
+      <div class="flex-grow-1">
+        <h6 class="algorithm-calc-title mb-1">
+          <i class="bi bi-diagram-3 me-1"></i>{{ calc.title or 'Detail Perhitungan Algoritma' }}
+        </h6>
+        <p class="algorithm-calc-subtitle mb-0">
+          {{ calc.subtitle or 'Rincian proses inferensi model, perhitungan probabilitas, margin, validasi label, dan keputusan akhir sistem.' }}
+        </p>
+      </div>
+      <button class="btn btn-sm btn-outline-teal algorithm-calc-toggle flex-shrink-0" type="button"
+              data-bs-toggle="collapse" data-bs-target="#algorithmCalcCollapse"
+              aria-expanded="false" aria-controls="algorithmCalcCollapse" id="algorithmCalcToggleBtn">
+        <i class="bi bi-chevron-down me-1 algorithm-calc-chevron"></i><span class="toggle-label">Lihat Detail</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="collapse" id="algorithmCalcCollapse">
+    <div class="card-body algorithm-calc-body">
+
+      <div class="algorithm-honesty-note">
+        <i class="bi bi-info-circle me-1"></i>
+        {{ calc.technical_honesty_note or 'Catatan: Bagian ini menampilkan perhitungan inferensi dan logika keputusan berdasarkan keluaran model. Sistem tidak menampilkan perhitungan internal layer-by-layer dari neural network Teachable Machine.' }}
+      </div>
+
+      {# A. Ringkasan Perhitungan #}
+      <div class="algorithm-subsection">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-grid-3x3-gap me-1"></i>A. Ringkasan Perhitungan</h6>
+        <div class="algorithm-summary-grid">
+          {% for item in calc.summary_grid or [] %}
+          <div class="algorithm-summary-mini-card">
+            <span class="algorithm-summary-label">{{ item.label }}</span>
+            <strong class="algorithm-summary-value">{{ item.value }}</strong>
+          </div>
+          {% else %}
+          <div class="algorithm-summary-mini-card">
+            <span class="algorithm-summary-label">Predicted Class</span>
+            <strong class="algorithm-summary-value">{{ analysis.predicted_display_name }}</strong>
+          </div>
+          <div class="algorithm-summary-mini-card">
+            <span class="algorithm-summary-label">Confidence</span>
+            <strong class="algorithm-summary-value">{{ analysis.confidence_percent }}%</strong>
+          </div>
+          <div class="algorithm-summary-mini-card">
+            <span class="algorithm-summary-label">Final Decision</span>
+            <strong class="algorithm-summary-value">{{ analysis.final_decision or result.final_decision or '—' }}</strong>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# B. Tahapan Algoritma #}
+      <div class="algorithm-subsection">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-list-ol me-1"></i>B. Tahapan Algoritma</h6>
+        <div class="algorithm-pipeline">
+          {% for step in calc.pipeline_steps or [] %}
+          <div class="algorithm-pipeline-item">
+            <div class="algorithm-pipeline-marker">{{ step.step }}</div>
+            <div class="algorithm-pipeline-content">
+              <div class="algorithm-pipeline-head">
+                <strong>{{ step.name }}</strong>
+                <span class="algorithm-pipeline-status">{{ step.status }}</span>
+              </div>
+              <p class="algorithm-pipeline-text mb-0">{{ step.explanation }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# C. Softmax Probability #}
+      <div class="algorithm-subsection">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-table me-1"></i>C. Softmax Probability</h6>
+        <div class="table-responsive algorithm-table-wrap">
+          <table class="table table-sm algorithm-table">
+            <thead>
+              <tr>
+                <th>Class</th>
+                <th>Softmax Score</th>
+                <th>Percentage</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in calc.softmax_table or [] %}
+              <tr class="{% if row.status %}algorithm-row-top{% endif %}">
+                <td>{{ row.label }}</td>
+                <td><code>{{ "%.4f"|format(row.softmax_score|float) }}</code></td>
+                <td><strong>{{ row.percent }}%</strong></td>
+                <td>
+                  {% if row.status %}
+                  <span class="badge bg-teal-soft">{{ row.status }}</span>
+                  {% else %}—{% endif %}
+                </td>
+              </tr>
+              {% else %}
+              {% for item in analysis.sorted_probabilities %}
+              <tr class="{% if item.is_predicted %}algorithm-row-top{% endif %}">
+                <td>{{ item.label }}</td>
+                <td><code>{{ "%.4f"|format(item.percent / 100) }}</code></td>
+                <td><strong>{{ item.percent }}%</strong></td>
+                <td>{% if item.is_predicted %}<span class="badge bg-teal-soft">Top Prediction</span>{% else %}—{% endif %}</td>
+              </tr>
+              {% endfor %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="algorithm-formula-inline"><code>Probability (%) = Softmax Score × 100</code></div>
+      </div>
+
+      {# D. Ranking Kelas #}
+      <div class="algorithm-subsection">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-sort-numeric-down me-1"></i>D. Ranking Kelas</h6>
+        {% for item in calc.ranking_items or analysis.sorted_probabilities %}
+        <div class="prob-item compact algorithm-rank-item {% if item.rank == 1 or item.is_predicted %}prob-match{% endif %}">
+          <div class="prob-item-header">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="rank-number">#{{ item.rank }}</span>
+              <span class="class-pill {{ item.key }}">{{ item.label }}</span>
+              {% if item.rank == 1 or item.is_predicted %}<span class="rank-badge predicted">Top Prediction</span>{% endif %}
+            </div>
+            <strong>{{ item.percent }}%</strong>
+          </div>
+          <div class="prob-bar-track">
+            <div class="prob-bar-fill bar-{{ item.color if item.color is defined else item.key }}" style="width: {{ item.percent }}%;"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {# E. Perhitungan Top-2 Margin #}
+      {% set margin = calc.margin_calculation or {} %}
+      <div class="algorithm-subsection">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-arrows-collapse me-1"></i>E. Perhitungan Top-2 Margin</h6>
+        <div class="algorithm-calc-box">
+          <div class="algorithm-fields-grid algorithm-fields-grid-3">
+            <div class="algorithm-field"><span>Top-1 Score</span><strong>{{ margin.top1_score|default('—') }}{% if margin.top1_score is number %}%{% endif %}</strong></div>
+            <div class="algorithm-field"><span>Top-2 Score</span><strong>{{ margin.top2_score|default('—') }}{% if margin.top2_score is number %}%{% endif %}</strong></div>
+            <div class="algorithm-field"><span>Top-2 Margin</span><strong>{{ margin.margin|default('—') }}{% if margin.margin is number %}%{% endif %}</strong></div>
+          </div>
+          <div class="algorithm-formula-inline mt-2"><code>{{ margin.formula or 'Top-2 Margin = Top-1 Score − Top-2 Score' }}</code></div>
+          {% if margin.calculation_line %}
+          <div class="algorithm-calculation-line">{{ margin.calculation_line }}</div>
+          {% endif %}
+          <p class="algorithm-margin-note mb-0">{{ margin.interpretation or 'Margin yang besar menunjukkan bahwa prediksi utama jauh lebih dominan dibanding kelas kedua. Margin yang kecil menunjukkan prediksi ambigu.' }}</p>
+        </div>
+      </div>
+
+      {# F. Validasi Label Pembanding #}
+      <div class="algorithm-subsection">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-check2-square me-1"></i>F. Validasi Label Pembanding</h6>
+        <div class="algorithm-fields-grid algorithm-fields-grid-2">
+          <div class="algorithm-field"><span>Expected Class</span><strong>{{ calc.expected_class or analysis.expected_class_display or 'Unknown' }}</strong></div>
+          <div class="algorithm-field"><span>Expected Class Source</span><strong>{{ calc.expected_class_source or analysis.expected_source or 'Unknown' }}</strong></div>
+          <div class="algorithm-field"><span>Predicted Class</span><strong>{{ calc.predicted_class or analysis.predicted_display_name }}</strong></div>
+          <div class="algorithm-field"><span>Validation Status</span><strong>{{ calc.validation_status or analysis.validation_status or 'No Expected Class Provided' }}</strong></div>
+        </div>
+        <p class="algorithm-validation-note mb-0">{{ calc.validation_explanation or 'Karena tidak ada label pembanding, sistem tidak dapat memvalidasi hasil secara otomatis.' }}</p>
+      </div>
+
+      {# Confidence Category (between F and G) #}
+      {% set conf_calc = calc.confidence_calculation or {} %}
+      <div class="algorithm-subsection">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-speedometer2 me-1"></i>Kategori Confidence</h6>
+        <div class="algorithm-calc-box">
+          <div class="algorithm-confidence-lines">
+            <div>Confidence = <strong>{{ conf_calc.confidence_pct|default(analysis.confidence_percent) }}%</strong></div>
+            {% if conf_calc.threshold_line %}
+            <div><code>{{ conf_calc.threshold_line }}</code></div>
+            {% endif %}
+            <div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+              <span>Confidence Category =</span>
+              <span class="algorithm-conf-badge conf-{{ conf_calc.badge_tone or 'info' }}">{{ conf_calc.category or calc.confidence_level or analysis.confidence_level or '—' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {# G. Keputusan Akhir #}
+      {% set final_block = calc.final_decision_block or {} %}
+      <div class="algorithm-subsection">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-flag me-1"></i>G. Keputusan Akhir</h6>
+        <div class="algorithm-fields-grid algorithm-fields-grid-2">
+          <div class="algorithm-field"><span>Confidence Level</span><strong>{{ final_block.confidence_level or calc.confidence_level or '—' }}</strong></div>
+          <div class="algorithm-field"><span>Top-2 Margin</span><strong>{{ final_block.top2_margin or '—' }}</strong></div>
+          <div class="algorithm-field"><span>Validation Status</span><strong>{{ final_block.validation_status or calc.validation_status or '—' }}</strong></div>
+          <div class="algorithm-field"><span>Known Class Status</span><strong>{{ final_block.known_class_status or calc.known_class_status or analysis.known_class_status or '—' }}</strong></div>
+          <div class="algorithm-field algorithm-field-wide"><span>Final Decision</span><strong>{{ final_block.final_decision or result.final_decision or analysis.final_decision or '—' }}</strong></div>
+        </div>
+        <p class="algorithm-final-note mb-0">{{ final_block.explanation or 'Keputusan akhir ditentukan dari confidence, margin, validasi label, dan hasil deteksi Khat.' }}</p>
+      </div>
+
+      {# Rumus yang Digunakan #}
+      <div class="algorithm-formulas-card">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-braces me-1"></i>Rumus yang Digunakan</h6>
+        {% for formula in calc.formulas_id or calc.formulas or [] %}
+        <div class="algorithm-formula-block">
+          <div class="algorithm-formula-title">{{ loop.index }}. {{ formula.title }}</div>
+          <pre class="algorithm-formula-code"><code>{{ formula.code }}</code></pre>
+        </div>
+        {% endfor %}
+      </div>
+
+      {# H. Interpretasi Hasil #}
+      <div class="algorithm-interpretation-card">
+        <h6 class="algorithm-subsection-title"><i class="bi bi-mortarboard me-1"></i>H. Interpretasi Hasil</h6>
+        <p class="algorithm-interpretation-text mb-0">{{ calc.interpretation_id or calc.interpretation or analysis.interpretation or 'Interpretasi hasil klasifikasi berdasarkan confidence, margin, dan validasi label.' }}</p>
+      </div>
+
+    </div>
+  </div>
+</section>

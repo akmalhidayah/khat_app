@@ -1,0 +1,289 @@
+<aside class="app-sidebar sidebar" id="appSidebar" aria-label="Main navigation">
+  <div class="sidebar-brand">
+    <div class="sidebar-brand-main">
+      <div class="brand-icon" aria-hidden="true">
+        <i class="bi bi-brush-fill"></i>
+      </div>
+      <div class="brand-text">
+        <h1 class="brand-title">Arabic Khat AI</h1>
+        <p class="sidebar-subtitle">Klasifikasi Gaya Kaligrafi</p>
+      </div>
+    </div>
+    <button
+      type="button"
+      class="sidebar-collapse-btn d-none d-lg-inline-flex"
+      id="sidebarCollapseBtn"
+      aria-label="Ciutkan sidebar"
+      title="Ciutkan sidebar"
+    >
+      <i class="bi bi-chevron-left" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  <nav class="sidebar-nav sidebar-menu" aria-label="Menu aplikasi">
+    {% if config.APP_SIMPLE_MODE %}
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Klasifikasi</div>
+      <a
+        href="{{ url_for('classification.classify_image') }}"
+        class="sidebar-link{% if request.endpoint in ['classification.classify_image', 'classification.classification_result'] %} active{% endif %}"
+        data-tooltip="Klasifikasi Gambar"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-image sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Klasifikasi Gambar</span>
+      </a>
+      <a
+        href="{{ url_for('classification.history') }}"
+        class="sidebar-link{% if request.endpoint == 'classification.history' %} active{% endif %}"
+        data-tooltip="Riwayat Klasifikasi"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-clock-history sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Riwayat Klasifikasi</span>
+      </a>
+      <a
+        href="{{ url_for('classification.classification_detail_latest') }}"
+        class="sidebar-link{% if request.endpoint in ['classification.classification_detail', 'classification.classification_detail_latest'] %} active{% endif %}"
+        data-tooltip="Detail Perhitungan Algoritma"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-calculator sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Detail Perhitungan Algoritma</span>
+      </a>
+      <a
+        href="{{ url_for('cnn_calculation.cnn_calculation_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('cnn_calculation.') %} active{% endif %}"
+        data-tooltip="Perhitungan CNN VGG16"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-braces sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Perhitungan CNN VGG16</span>
+      </a>
+    </div>
+
+    {% if session.get('role') == 'admin' %}
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Administrator</div>
+      <a
+        href="{{ url_for('dashboard.dashboard') }}"
+        class="sidebar-link{% if request.endpoint == 'dashboard.dashboard' %} active{% endif %}"
+        data-tooltip="Dashboard"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-speedometer2 sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Dashboard</span>
+      </a>
+      <a
+        href="{{ url_for('dataset.list_dataset') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('dataset.') %} active{% endif %}"
+        data-tooltip="Manajemen Dataset"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-database sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Manajemen Dataset</span>
+      </a>
+      <a
+        href="{{ url_for('model_management.model_management_page') }}"
+        class="sidebar-link{% if request.endpoint and (request.endpoint.startswith('model_management.') or request.endpoint.startswith('training.')) %} active{% endif %}"
+        data-tooltip="Manajemen Model"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-cpu sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Manajemen Model</span>
+      </a>
+      <a
+        href="{{ url_for('evaluation.evaluation_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('evaluation.') %} active{% endif %}"
+        data-tooltip="Evaluasi Model"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-graph-up-arrow sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Evaluasi Model</span>
+      </a>
+      <a
+        href="{{ url_for('cnn_calculation.cnn_calculation_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('cnn_calculation.') %} active{% endif %}"
+        data-tooltip="Perhitungan CNN VGG16"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-braces sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Perhitungan CNN VGG16</span>
+      </a>
+      <a
+        href="{{ url_for('algorithm_calculation.algorithm_calculation_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('algorithm_calculation.') %} active{% endif %}"
+        data-tooltip="Dokumentasi Perhitungan Algoritma"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-journal-code sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Dokumentasi Algoritma</span>
+      </a>
+      <a
+        href="{{ url_for('report.report_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('report.') %} active{% endif %}"
+        data-tooltip="Laporan"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-file-earmark-bar-graph sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Laporan</span>
+      </a>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Utama</div>
+      <a
+        href="{{ url_for('dashboard.dashboard') }}"
+        class="sidebar-link{% if request.endpoint == 'dashboard.dashboard' %} active{% endif %}"
+        data-tooltip="Dashboard"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-speedometer2 sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Dashboard</span>
+      </a>
+    </div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Data</div>
+      <a
+        href="{{ url_for('dataset.list_dataset') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('dataset.') %} active{% endif %}"
+        data-tooltip="Dataset Management"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-database sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Dataset Management</span>
+      </a>
+    </div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Model</div>
+      <a
+        href="{{ url_for('model_management.model_management_page') }}"
+        class="sidebar-link{% if request.endpoint and (request.endpoint.startswith('model_management.') or request.endpoint.startswith('training.')) %} active{% endif %}"
+        data-tooltip="Manajemen Model"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-cpu sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Manajemen Model</span>
+      </a>
+      <a
+        href="{{ url_for('evaluation.evaluation_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('evaluation.') %} active{% endif %}"
+        data-tooltip="Evaluation"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-graph-up-arrow sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Evaluation</span>
+      </a>
+      <a
+        href="{{ url_for('cnn_calculation.cnn_calculation_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('cnn_calculation.') %} active{% endif %}"
+        data-tooltip="CNN VGG16 Calculation"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-braces sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Perhitungan CNN VGG16</span>
+      </a>
+      <a
+        href="{{ url_for('algorithm_calculation.algorithm_calculation_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('algorithm_calculation.') %} active{% endif %}"
+        data-tooltip="Perhitungan Algoritma"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-calculator sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Perhitungan Algoritma</span>
+      </a>
+    </div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Klasifikasi</div>
+      <a
+        href="{{ url_for('classification.classify_image') }}"
+        class="sidebar-link{% if request.endpoint in ['classification.classify_image', 'classification.classification_result'] %} active{% endif %}"
+        data-tooltip="Classify Image"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-image sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Classify Image</span>
+      </a>
+      <a
+        href="{{ url_for('classification.history') }}"
+        class="sidebar-link{% if request.endpoint in ['classification.history', 'classification.continue_classification'] %} active{% endif %}"
+        data-tooltip="Classification History"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-clock-history sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Classification History</span>
+      </a>
+      <a
+        href="{{ url_for('classification.classification_detail_latest') }}"
+        class="sidebar-link{% if request.endpoint in ['classification.classification_detail', 'classification.classification_detail_latest'] %} active{% endif %}"
+        data-tooltip="Detail Perhitungan Algoritma"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-calculator sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Detail Perhitungan Algoritma</span>
+      </a>
+    </div>
+
+    <div class="sidebar-group">
+      <div class="sidebar-group-label">Output</div>
+      <a
+        href="{{ url_for('report.report_page') }}"
+        class="sidebar-link{% if request.endpoint and request.endpoint.startswith('report.') %} active{% endif %}"
+        data-tooltip="Reports"
+      >
+        <span class="sidebar-icon-wrap" aria-hidden="true">
+          <i class="bi bi-file-earmark-bar-graph sidebar-icon"></i>
+        </span>
+        <span class="sidebar-text">Reports</span>
+      </a>
+    </div>
+    {% endif %}
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-user-card">
+      <div class="sidebar-user-avatar" aria-hidden="true">
+        <i class="bi bi-person-fill"></i>
+      </div>
+      <div class="sidebar-user-meta">
+        <strong class="sidebar-user-name">{{ session.get('name', 'Pengguna') }}</strong>
+        <span class="sidebar-user-role">{{ session.get('role', 'pengguna')|capitalize }}</span>
+      </div>
+    </div>
+    <a
+      href="{{ url_for('auth.logout') }}"
+      class="sidebar-logout"
+      data-tooltip="Logout"
+    >
+      <span class="sidebar-icon-wrap sidebar-icon-wrap-logout" aria-hidden="true">
+        <i class="bi bi-box-arrow-left sidebar-icon"></i>
+      </span>
+      <span class="sidebar-text">Logout</span>
+    </a>
+    <div class="sidebar-version">v1.0 · CNN Classification</div>
+  </div>
+</aside>

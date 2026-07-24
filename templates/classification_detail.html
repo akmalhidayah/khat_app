@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}Detail Perhitungan Algoritma{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/classification_detail.css') }}">
+{% endblock %}
+{% block content %}
+<div class="algo-detail-v1">
+
+  <header class="algo-detail-header">
+    <div>
+      <p class="algo-detail-eyebrow">Arabic Khat AI · CNN Classification</p>
+      <h1 class="algo-detail-title">Detail Perhitungan Algoritma</h1>
+      <p class="algo-detail-subtitle">Tahapan preprocessing, proses CNN, probabilitas tiap kelas, dan keputusan akhir klasifikasi.</p>
+    </div>
+    <div class="algo-detail-header-actions">
+      <a href="{{ url_for('classification.classify_image') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-plus-circle me-1"></i>Klasifikasi Baru
+      </a>
+      <a href="{{ url_for('classification.history') }}" class="btn btn-emerald btn-sm">
+        <i class="bi bi-clock-history me-1"></i>Riwayat
+      </a>
+    </div>
+  </header>
+
+  {% if not detail.available %}
+  <section class="algo-detail-empty card">
+    <div class="card-body text-center py-5">
+      <i class="bi bi-calculator display-6 text-muted"></i>
+      <h5 class="mt-3">{% if detail.riwayat_id %}Detail Tidak Tersedia{% else %}Belum Ada Data Klasifikasi{% endif %}</h5>
+      <p class="text-muted mb-4">{{ detail.message or 'Detail perhitungan belum tersedia untuk data ini.' }}</p>
+      {% if not detail.riwayat_id %}
+      <a href="{{ url_for('classification.classify_image') }}" class="btn btn-emerald">
+        <i class="bi bi-image me-1"></i>Klasifikasi Gambar
+      </a>
+      {% endif %}
+    </div>
+  </section>
+  {% else %}
+
+  {% if detail.summary.low_confidence_warning %}
+  <div class="algo-detail-alert warn" role="alert">
+    <i class="bi bi-exclamation-triangle me-2"></i>{{ detail.summary.low_confidence_warning }}
+  </div>
+  {% endif %}
+
+  {# 1. Ringkasan Hasil #}
+  <section class="algo-detail-card algo-detail-summary">
+    <div class="algo-detail-card-head">
+      <span><i class="bi bi-clipboard-check me-1"></i>Ringkasan Hasil Klasifikasi</span>
+      <span class="algo-confidence-badge tone-{{ detail.summary.confidence_tone }}">{{ detail.summary.confidence_level }}</span>
+    </div>
+    <div class="algo-detail-card-body">
+      <div class="algo-summary-grid">
+        <div class="algo-summary-preview">
+          {% if detail.image.preview_url %}
+          <img src="{{ detail.image.preview_url }}" alt="Preview citra" class="algo-preview-img">
+          {% else %}
+          <div class="algo-preview-empty"><i class="bi bi-image"></i></div>
+          {% endif %}
+        </div>
+        <div class="algo-summary-meta">
+          <div class="algo-kpi">
+            <span>Hasil Klasifikasi</span>
+            <strong>{{ detail.summary.predicted }}</strong>
+          </div>
+          <div class="algo-kpi">
+            <span>Confidence</span>
+            <strong>{{ detail.summary.confidence_pct }}%</strong>
+          </div>
+          <div class="algo-kpi">
+            <span>Level Confidence</span>
+            <strong>{{ detail.summary.confidence_level }}</strong>
+          </div>
+          <div class="algo-kpi">
+            <span>Waktu Klasifikasi</span>
+            <strong>{{ detail.summary.created_at }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# A. Informasi Gambar #}
+  <section class="algo-detail-card">
+    <div class="algo-detail-card-head"><span><i class="bi bi-image me-1"></i>Informasi Gambar</span></div>
+    <div class="algo-detail-card-body">
+      <div class="algo-info-grid">
+        <div><span>Nama File</span><strong>{{ detail.image.filename or '—' }}</strong></div>
+        <div><span>Format</span><strong>{{ detail.image.format }}</strong></div>
+        <div><span>Ukuran Asli</span><strong>{% if detail.image.width and detail.image.height %}{{ detail.image.width }} × {{ detail.image.height }} px{% else %}—{% endif %}</strong></div>
+        <div><span>Ukuran File</span><strong>{% if detail.image.file_size_kb %}{{ detail.image.file_size_kb }} KB{% else %}—{% endif %}</strong></div>
+      </div>
+    </div>
+  </section>
+
+  {# B. Preprocessing #}
+  <section class="algo-detail-card">
+    <div class="algo-detail-card-head"><span><i class="bi bi-sliders me-1"></i>Tahap Preprocessing Citra</span></div>
+    <div class="algo-detail-card-body">
+      <ol class="algo-timeline">
+        {% for step in detail.preprocessing.steps %}
+        <li>
+          <span class="algo-step-num">{{ step.step }}</span>
+          <span class="algo-step-text">{{ step.text }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+      <div class="algo-info-grid mt-3">
+        <div><span>Sebelum Resize</span><strong>{{ detail.preprocessing.original_size }}</strong></div>
+        <div><span>Setelah Resize</span><strong>{{ detail.preprocessing.resized_size }}</strong></div>
+        <div><span>Bentuk Tensor</span><strong><code>{{ detail.preprocessing.tensor_shape }}</code></strong></div>
+        <div><span>Input Model</span><strong>{{ detail.preprocessing.model_input }}</strong></div>
+        <div class="span-2"><span>Normalisasi</span><strong>{{ detail.preprocessing.normalization }}</strong></div>
+      </div>
+    </div>
+  </section>
+
+  {# C. CNN Layers #}
+  <section class="algo-detail-card">
+    <div class="algo-detail-card-head"><span><i class="bi bi-cpu me-1"></i>Tahap Ekstraksi Fitur CNN</span></div>
+    <div class="algo-detail-card-body">
+      <div class="algo-cnn-grid">
+        {% for layer in detail.cnn_layers %}
+        <div class="algo-cnn-item">
+          <div class="algo-cnn-icon"><i class="bi {{ layer.ikon }}"></i></div>
+          <div>
+            <strong>{{ layer.nama }}</strong>
+            <p>{{ layer.penjelasan }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {# D. Tabel Probabilitas #}
+  <section class="algo-detail-card">
+    <div class="algo-detail-card-head"><span><i class="bi bi-table me-1"></i>Hasil Probabilitas Prediksi</span></div>
+    <div class="algo-detail-card-body {% if detail.probabilities %}p-0{% endif %}">
+      {% if detail.probabilities %}
+      <div class="algo-table-scroll">
+        <table class="table table-sm algo-prob-table mb-0">
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Jenis Khat</th>
+              <th>Skor Softmax</th>
+              <th>Persentase</th>
+              <th>Ranking</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in detail.probabilities %}
+            <tr class="{% if row.rank == 1 %}row-top{% endif %}">
+              <td>{{ row.no }}</td>
+              <td>{{ row.name }}</td>
+              <td>{{ row.softmax }}</td>
+              <td>{{ row.percent }}%</td>
+              <td>{{ row.rank }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">Skor probabilitas per kelas tidak tercatat untuk data ini.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  {# F. Rumus Perhitungan #}
+  {% if detail.formulas %}
+  <section class="algo-detail-card">
+    <div class="algo-detail-card-head"><span><i class="bi bi-calculator me-1"></i>Rumus Perhitungan</span></div>
+    <div class="algo-detail-card-body">
+      <div class="algo-formulas-grid">
+        {% for formula in detail.formulas %}
+        <div class="algo-formula-item">
+          <strong>{{ formula.title }}</strong>
+          <code class="algo-formula-code">{{ formula.code }}</code>
+          <p class="algo-formula-example mb-0"><span>Contoh:</span> {{ formula.example }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# G. Grafik #}
+  <section class="algo-detail-card">
+    <div class="algo-detail-card-head"><span><i class="bi bi-bar-chart me-1"></i>Grafik Probabilitas Kelas</span></div>
+    <div class="algo-detail-card-body">
+      <div class="algo-chart-wrap">
+        <canvas id="probChart" aria-label="Grafik probabilitas kelas khat"></canvas>
+      </div>
+    </div>
+  </section>
+
+  {# E. Keputusan Akhir #}
+  <section class="algo-detail-card">
+    <div class="algo-detail-card-head"><span><i class="bi bi-check2-circle me-1"></i>Keputusan Akhir Klasifikasi</span></div>
+    <div class="algo-detail-card-body">
+      <div class="algo-decision-grid">
+        <div><span>Kelas Tertinggi</span><strong>{{ detail.decision.top_class }}</strong></div>
+        <div><span>Confidence</span><strong>{{ detail.decision.confidence_pct }}%</strong></div>
+        <div><span>Ranking Kedua</span><strong>{{ detail.decision.second_class }}</strong></div>
+        <div><span>Skor Ranking Kedua</span><strong>{% if detail.decision.second_pct is not none %}{{ detail.decision.second_pct }}%{% else %}—{% endif %}</strong></div>
+        <div><span>Margin Top-1 vs Top-2</span><strong>{% if detail.decision.margin_pct is not none %}{{ detail.decision.margin_pct }}%{% else %}—{% endif %}</strong></div>
+      </div>
+      <p class="algo-decision-text mt-3 mb-0">
+        <i class="bi bi-info-circle me-1"></i>{{ detail.decision.final_text }}
+      </p>
+    </div>
+  </section>
+
+  {# H. Perhitungan Langkah demi Langkah #}
+  {% if detail.walkthrough %}
+  <section class="algo-detail-card algo-detail-walkthrough">
+    <div class="algo-detail-card-head">
+      <span><i class="bi bi-list-ol me-1"></i>Perhitungan Lengkap — Langkah demi Langkah</span>
+    </div>
+    <div class="algo-detail-card-body">
+      <p class="algo-walkthrough-lead">
+        Penjelasan utuh dari masukan citra hingga keputusan akhir, disertai rumus, perhitungan angka, dan kesimpulan tiap tahap.
+      </p>
+      <div class="algo-walkthrough">
+        {% for block in detail.walkthrough %}
+        <article class="algo-walk-block">
+          <div class="algo-walk-head">
+            <span class="algo-walk-num">{{ block.step }}</span>
+            <h3 class="algo-walk-title">{{ block.title }}</h3>
+          </div>
+          <p class="algo-walk-narrative">{{ block.narrative|safe }}</p>
+          {% if block.bullets %}
+          <ul class="algo-walk-bullets">
+            {% for bullet in block.bullets %}
+            <li>{{ bullet|safe }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if block.formula %}
+          <div class="algo-formula-block algo-formula-inline">
+            <span class="algo-formula-label">Rumus</span>
+            <div>{{ block.formula }}</div>
+          </div>
+          {% endif %}
+          {% if block.calculation %}
+          <div class="algo-calc-box">
+            <span class="algo-calc-label">Perhitungan</span>
+            <p>{{ block.calculation|safe }}</p>
+          </div>
+          {% endif %}
+          <div class="algo-walk-result">
+            <i class="bi bi-check2-circle"></i>
+            <div><strong>Kesimpulan:</strong> {{ block.result|safe }}</div>
+          </div>
+        </article>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% endif %}
+</div>
+
+{% if detail.available %}
+<script>
+window.ALGO_DETAIL_CHART = {{ detail.chart | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/classification_detail.js') }}"></script>
+{% endif %}
+{% endblock %}

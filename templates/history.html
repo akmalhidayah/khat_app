@@ -1,0 +1,506 @@
+{% extends "base.html" %}
+{% block title %}Riwayat Klasifikasi{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/history.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/classification.css') }}">
+{% endblock %}
+{% block content %}
+{% set has_filters = class_filter or status_filter or confidence_filter or search_query or date_from or date_to %}
+{% set export_qs = request.query_string.decode('utf-8') if request.query_string else '' %}
+{% set insights = prediction_insights %}
+
+<div class="hist-v2">
+
+  {# ── Header ── #}
+  <header class="hist-v2-header">
+    <div class="hist-v2-header-text">
+      <p class="hist-v2-eyebrow">Arabic Khat AI · Manajemen Prediksi</p>
+      <h1 class="hist-v2-title">Riwayat Klasifikasi</h1>
+      <p class="hist-v2-subtitle">Tinjau, filter, dan kelola hasil prediksi tersimpan — Khat valid, Non-Khat ditolak, dan input tidak pasti.</p>
+    </div>
+    <div class="hist-v2-header-actions">
+      <a href="{{ url_for('classification.classify_image') }}" class="btn hist-v2-btn-primary btn-sm">
+        <i class="bi bi-plus-circle me-1"></i>Klasifikasi Baru
+      </a>
+      {% if total_predictions > 0 %}
+      <div class="btn-group">
+        <button type="button" class="btn hist-v2-btn-outline btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-download me-1"></i>Ekspor Riwayat
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="{{ url_for('classification.export_history', fmt='csv') }}{% if export_qs %}?{{ export_qs }}{% endif %}"><i class="bi bi-filetype-csv me-2"></i>Export CSV{% if has_filters %} (Filtered){% endif %}</a></li>
+          <li><a class="dropdown-item" href="{{ url_for('classification.export_history', fmt='json') }}{% if export_qs %}?{{ export_qs }}{% endif %}"><i class="bi bi-filetype-json me-2"></i>Export JSON{% if has_filters %} (Filtered){% endif %}</a></li>
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if total_predictions > 0 %}
+  {# ── Summary cards ── #}
+  <section class="hist-v2-summary">
+    <div class="hist-v2-stat tone-neutral">
+      <span class="hist-v2-stat-icon"><i class="bi bi-collection"></i></span>
+      <span class="hist-v2-stat-label">Total Riwayat</span>
+      <strong class="hist-v2-stat-value">{{ total_predictions or 0 }}</strong>
+      <small>Semua record prediksi</small>
+    </div>
+    <div class="hist-v2-stat tone-ok">
+      <span class="hist-v2-stat-icon"><i class="bi bi-check-circle"></i></span>
+      <span class="hist-v2-stat-label">Khat Valid</span>
+      <strong class="hist-v2-stat-value">{{ valid_khat_count or 0 }}</strong>
+      <small>Prediksi kelas khat</small>
+    </div>
+    <div class="hist-v2-stat tone-danger">
+      <span class="hist-v2-stat-icon"><i class="bi bi-x-circle"></i></span>
+      <span class="hist-v2-stat-label">Ditolak</span>
+      <strong class="hist-v2-stat-value">{{ rejected_non_khat_count or 0 }}</strong>
+      <small>Non-Khat ditolak</small>
+    </div>
+    <div class="hist-v2-stat tone-warn">
+      <span class="hist-v2-stat-icon"><i class="bi bi-question-circle"></i></span>
+      <span class="hist-v2-stat-label">Tidak Pasti</span>
+      <strong class="hist-v2-stat-value">{{ uncertain_count or 0 }}</strong>
+      <small>Perlu review manual</small>
+    </div>
+    <div class="hist-v2-stat tone-info">
+      <span class="hist-v2-stat-icon"><i class="bi bi-percent"></i></span>
+      <span class="hist-v2-stat-label">Rata-rata Confidence</span>
+      <strong class="hist-v2-stat-value">{{ (avg_confidence * 100)|round(1) ~ '%' if avg_confidence is not none else '—' }}</strong>
+      <small>Hanya prediksi Khat valid</small>
+    </div>
+  </section>
+
+  {# ── Quick filter chips ── #}
+  <div class="hist-v2-quick-filters" id="quickFilters">
+    <button type="button" class="hist-v2-chip active" data-quick="all">Semua</button>
+    <button type="button" class="hist-v2-chip" data-quick="khat">Khat Valid</button>
+    <button type="button" class="hist-v2-chip" data-quick="non_khat">Non-Khat Ditolak</button>
+    <button type="button" class="hist-v2-chip" data-quick="unrecognized">Khat Tidak Dikenali</button>
+    <button type="button" class="hist-v2-chip" data-quick="uncertain">Tidak Pasti</button>
+    <button type="button" class="hist-v2-chip" data-quick="high">High Confidence</button>
+    <button type="button" class="hist-v2-chip" data-quick="medium">Medium Confidence</button>
+    <button type="button" class="hist-v2-chip" data-quick="low">Low Confidence</button>
+  </div>
+
+  {# ── Filter + insight row ── #}
+  <div class="hist-v2-toolbar">
+    <section class="hist-v2-card hist-v2-filter">
+      <div class="hist-v2-card-head"><span><i class="bi bi-funnel"></i> Filter Riwayat</span></div>
+      <div class="hist-v2-card-body">
+        <form class="hist-v2-filter-form" method="get" id="historyFilterForm">
+          <div class="hist-v2-filter-grid">
+            <div>
+              <label class="form-label">Kelas</label>
+              <select name="class_name" class="form-select form-select-sm">
+                <option value="">Semua kelas</option>
+                {% for key, label in class_labels.items() %}
+                <option value="{{ key }}" {% if class_filter == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Status Input</label>
+              <select name="input_status" class="form-select form-select-sm">
+                <option value="">Semua status</option>
+                <option value="khat" {% if status_filter == 'khat' %}selected{% endif %}>Khat Valid</option>
+                <option value="uncertain" {% if status_filter == 'uncertain' %}selected{% endif %}>Tidak Pasti</option>
+                <option value="non_khat" {% if status_filter == 'non_khat' %}selected{% endif %}>Non-Khat</option>
+                <option value="unrecognized" {% if status_filter == 'unrecognized' %}selected{% endif %}>Khat Tidak Dikenali</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Confidence Level</label>
+              <select name="confidence_level" class="form-select form-select-sm">
+                <option value="">Semua level</option>
+                <option value="high" {% if confidence_filter == 'high' %}selected{% endif %}>High (≥85%)</option>
+                <option value="medium" {% if confidence_filter == 'medium' %}selected{% endif %}>Medium (50–84%)</option>
+                <option value="low" {% if confidence_filter == 'low' %}selected{% endif %}>Low (&lt;50%)</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Cari nama file</label>
+              <input type="text" name="q" class="form-control form-control-sm" value="{{ search_query }}" placeholder="Nama file…">
+            </div>
+            <div>
+              <label class="form-label">Dari tanggal</label>
+              <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}">
+            </div>
+            <div>
+              <label class="form-label">Sampai tanggal</label>
+              <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}">
+            </div>
+          </div>
+          <div class="hist-v2-filter-actions">
+            <button type="submit" class="btn hist-v2-btn-dark btn-sm"><i class="bi bi-funnel me-1"></i>Terapkan Filter</button>
+            <a href="{{ url_for('classification.history') }}" class="btn hist-v2-btn-outline btn-sm"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</a>
+            {% if date_from or date_to %}
+            <a href="{{ url_for('classification.history', class_name=class_filter, input_status=status_filter, confidence_level=confidence_filter, q=search_query) }}" class="btn hist-v2-btn-outline btn-sm"><i class="bi bi-calendar-x me-1"></i>Hapus Tanggal</a>
+            {% endif %}
+          </div>
+        </form>
+        <div class="hist-v2-active-filters mt-2">
+          <span class="hist-v2-filter-note" id="activeFilterNote">
+            {% if has_filters %}
+            Filter aktif: {{ filter_labels|join(' · ') }} · {{ filtered_count }} record
+            {% else %}
+            Menampilkan semua {{ total_predictions }} record.
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="hist-v2-card hist-v2-insight-card">
+      <div class="hist-v2-card-head"><span><i class="bi bi-lightbulb"></i> Insight Prediksi</span></div>
+      <div class="hist-v2-card-body">
+        {% if insights.record_count > 0 %}
+        <div class="hist-v2-insight-item">
+          <i class="bi bi-trophy"></i>
+          <div><span>Kelas paling sering</span><strong>{{ insights.most_predicted_display }}</strong></div>
+        </div>
+        <div class="hist-v2-insight-item">
+          <i class="bi bi-percent"></i>
+          <div><span>Rata-rata confidence</span><strong>{{ insights.avg_confidence_display }}</strong></div>
+        </div>
+        <div class="hist-v2-insight-item">
+          <i class="bi bi-arrow-up-circle"></i>
+          <div><span>Confidence tertinggi</span><strong>{{ insights.highest_confidence_display }}</strong></div>
+        </div>
+        <div class="hist-v2-insight-item">
+          <i class="bi bi-arrow-down-circle"></i>
+          <div><span>Confidence terendah</span><strong>{{ insights.lowest_confidence_display }}</strong></div>
+        </div>
+        <div class="hist-v2-insight-item">
+          <i class="bi bi-x-octagon"></i>
+          <div><span>Non-Khat ditolak</span><strong>{{ insights.rejected_count }}</strong></div>
+        </div>
+        <div class="hist-v2-insight-item">
+          <i class="bi bi-exclamation-circle"></i>
+          <div><span>Input tidak pasti</span><strong>{{ insights.uncertain_count }}</strong></div>
+        </div>
+        <div class="hist-v2-insight-item">
+          <i class="bi bi-clock"></i>
+          <div><span>Prediksi terbaru</span><strong>{{ insights.latest_prediction_date }}</strong></div>
+        </div>
+        {% else %}
+        <p class="hist-v2-insight-empty mb-0">Belum ada prediksi Khat valid.</p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  {# ── Results table ── #}
+  <section class="hist-v2-card hist-v2-table-card">
+    <div class="hist-v2-card-head hist-v2-table-head">
+      <span><i class="bi bi-table"></i> Hasil Klasifikasi Tersimpan</span>
+      <div class="hist-v2-table-meta">
+        <span id="historyCountLabel">—</span>
+        <select id="pageSizeSelect" class="form-select form-select-sm hist-v2-pagesize">
+          <option value="10">10 / halaman</option>
+          <option value="25">25 / halaman</option>
+          <option value="50">50 / halaman</option>
+          <option value="100">100 / halaman</option>
+        </select>
+      </div>
+    </div>
+    <div class="hist-v2-card-body hist-v2-table-body">
+      <div class="table-responsive hist-v2-table-wrap {% if not history_records_json %}d-none{% endif %}">
+        <table class="table align-middle hist-v2-table" id="historyTable">
+          <thead>
+            <tr>
+              <th>Gambar</th>
+              <th class="sortable" data-sort="input_type">Tipe Input <i class="bi bi-chevron-expand sort-icon"></i></th>
+              <th class="sortable" data-sort="status">Status <i class="bi bi-chevron-expand sort-icon"></i></th>
+              <th class="sortable" data-sort="class">Kelas Prediksi <i class="bi bi-chevron-expand sort-icon"></i></th>
+              <th class="sortable" data-sort="confidence">Confidence <i class="bi bi-chevron-expand sort-icon"></i></th>
+              <th class="sortable sorted desc" data-sort="date">Tanggal <i class="bi bi-chevron-down sort-icon"></i></th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody"></tbody>
+        </table>
+      </div>
+      <div class="hist-v2-pagination {% if not history_records_json %}d-none{% endif %}" id="historyPagination">
+        <button type="button" class="btn hist-v2-btn-outline btn-sm" id="prevPageBtn" disabled><i class="bi bi-chevron-left me-1"></i>Sebelumnya</button>
+        <span id="pageInfo">Halaman 1 / 1</span>
+        <button type="button" class="btn hist-v2-btn-outline btn-sm" id="nextPageBtn" disabled>Selanjutnya<i class="bi bi-chevron-right ms-1"></i></button>
+      </div>
+      <div id="historyFilteredEmpty" class="hist-v2-empty compact {% if history_records_json %}d-none{% endif %}">
+        <div class="hist-v2-empty-icon"><i class="bi bi-search"></i></div>
+        <h5>Tidak ada riwayat yang sesuai</h5>
+        <p>Tidak ada riwayat yang sesuai dengan filter.</p>
+        <a href="{{ url_for('classification.history') }}" class="btn hist-v2-btn-outline btn-sm">Reset Filter</a>
+      </div>
+    </div>
+  </section>
+
+  {% else %}
+  <section class="hist-v2-card">
+    <div class="hist-v2-empty">
+      <div class="hist-v2-empty-icon"><i class="bi bi-clock-history"></i></div>
+      <h5>Belum Ada Riwayat Klasifikasi</h5>
+      <p>Unggah dan klasifikasikan gambar Khat Arab untuk melihat riwayat prediksi di halaman ini.</p>
+      <a href="{{ url_for('classification.classify_image') }}" class="btn hist-v2-btn-primary btn-sm">Klasifikasi Gambar Baru</a>
+    </div>
+  </section>
+  {% endif %}
+
+</div>
+
+{# Preview modal #}
+<div class="modal fade hist-detail-modal-root" id="historyPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered hist-detail-dialog">
+    <div class="modal-content hist-detail-modal">
+      <div class="hist-detail-header">
+        <div class="hist-detail-header-left">
+          <div class="hist-detail-header-icon" aria-hidden="true">
+            <i class="bi bi-file-earmark-image"></i>
+          </div>
+          <div>
+            <h5 class="hist-detail-title">Detail Riwayat Klasifikasi</h5>
+            <p class="hist-detail-subtitle">Informasi lengkap hasil klasifikasi gambar</p>
+          </div>
+        </div>
+        <button type="button" class="hist-detail-close" data-bs-dismiss="modal" aria-label="Tutup">
+          <i class="bi bi-x-lg" aria-hidden="true"></i>
+        </button>
+      </div>
+
+      <div class="hist-detail-body">
+        <section class="hist-detail-section" aria-labelledby="histDetailSummaryHeading">
+          <h6 class="hist-detail-section-heading" id="histDetailSummaryHeading">
+            <i class="bi bi-grid-1x2" aria-hidden="true"></i> Ringkasan Hasil
+          </h6>
+          <div class="hist-detail-summary-grid">
+            <div class="hist-detail-preview-card">
+              <div class="hist-detail-card-label">
+                <i class="bi bi-image" aria-hidden="true"></i> Preview Gambar
+              </div>
+              <div class="hist-detail-img-wrap">
+                <img id="modalPreviewImg" class="hist-detail-img" alt="Pratinjau gambar klasifikasi">
+                <div id="modalPreviewPlaceholder" class="hist-detail-img-placeholder d-none">
+                  <i class="bi bi-image-alt" aria-hidden="true"></i>
+                  <span>Pratinjau tidak tersedia</span>
+                </div>
+              </div>
+              <p class="hist-detail-file-name" id="modalFilenamePreview" title="">—</p>
+            </div>
+
+            <div class="hist-detail-result-card">
+              <div class="hist-detail-highlights">
+                <div class="hist-detail-highlight hist-detail-highlight-class">
+                  <span class="hist-detail-highlight-label">Kelas Prediksi</span>
+                  <div class="hist-detail-highlight-value" id="modalHighlightClass">—</div>
+                </div>
+                <div class="hist-detail-highlight">
+                  <span class="hist-detail-highlight-label">Confidence</span>
+                  <div class="hist-detail-highlight-value" id="modalHighlightConfidence">—</div>
+                  <div class="hist-detail-conf-bar d-none" id="modalConfidenceBarWrap">
+                    <div class="hist-detail-conf-bar-fill" id="modalConfidenceBar"></div>
+                  </div>
+                </div>
+                <div class="hist-detail-highlight">
+                  <span class="hist-detail-highlight-label">Tingkat Reliabilitas</span>
+                  <div class="hist-detail-highlight-value" id="modalHighlightReliability">—</div>
+                </div>
+                <div class="hist-detail-highlight">
+                  <span class="hist-detail-highlight-label">Status</span>
+                  <div class="hist-detail-highlight-value" id="modalHighlightStatus">—</div>
+                </div>
+              </div>
+
+              <div id="modalRejectNote" class="hist-detail-alert danger d-none">
+                <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+                <span>Gambar ini ditolak karena tidak lolos tahap deteksi Khat.</span>
+              </div>
+              <div id="modalUncertainNote" class="hist-detail-alert warn d-none">
+                <i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i>
+                <span>Input ini memerlukan tinjauan manual.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="hist-detail-section" aria-labelledby="histDetailMetaHeading">
+          <h6 class="hist-detail-section-heading" id="histDetailMetaHeading">
+            <i class="bi bi-sliders" aria-hidden="true"></i> Metadata Teknis
+          </h6>
+          <div class="hist-detail-meta-grid">
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">File</span>
+              <strong class="hist-detail-meta-value" id="modalFilename">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Tipe Input</span>
+              <strong class="hist-detail-meta-value" id="modalInputType">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Probabilitas Khat</span>
+              <strong class="hist-detail-meta-value" id="modalKhatProb">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Probabilitas Non-Khat</span>
+              <strong class="hist-detail-meta-value" id="modalNonKhatProb">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Kelas Prediksi</span>
+              <strong class="hist-detail-meta-value" id="modalClass">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Confidence</span>
+              <strong class="hist-detail-meta-value" id="modalConfidence">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Tingkat Reliabilitas</span>
+              <strong class="hist-detail-meta-value" id="modalReliability">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Status</span>
+              <strong class="hist-detail-meta-value" id="modalStatus">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Waktu</span>
+              <strong class="hist-detail-meta-value" id="modalDate">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Arsitektur Model</span>
+              <strong class="hist-detail-meta-value" id="modalArch">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Mode Model</span>
+              <strong class="hist-detail-meta-value" id="modalMode">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Label Pembanding</span>
+              <strong class="hist-detail-meta-value" id="modalManualExpected">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Known Class Status</span>
+              <strong class="hist-detail-meta-value" id="modalKnownClassStatus">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Preprocessing</span>
+              <strong class="hist-detail-meta-value" id="modalPreprocessingMode">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Source Type</span>
+              <strong class="hist-detail-meta-value" id="modalSourceType">—</strong>
+            </div>
+            <div class="hist-detail-meta-item">
+              <span class="hist-detail-meta-label">Koreksi Label</span>
+              <strong class="hist-detail-meta-value" id="modalCorrectionLabel">—</strong>
+            </div>
+            <div class="hist-detail-meta-item hist-detail-meta-wide">
+              <span class="hist-detail-meta-label">Catatan Koreksi</span>
+              <strong class="hist-detail-meta-value" id="modalCorrectionNotes">—</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="hist-detail-section d-none" id="modalSimilaritySection" aria-labelledby="histDetailSimilarityHeading">
+          <h6 class="hist-detail-section-heading" id="histDetailSimilarityHeading">
+            <i class="bi bi-intersect" aria-hidden="true"></i> Cek Kemiripan Dataset
+          </h6>
+          <div class="hist-detail-similarity-card" id="modalSimilarityCard">
+            <div class="hist-detail-similarity-grid">
+              <div class="hist-detail-meta-item">
+                <span class="hist-detail-meta-label">Similarity Status</span>
+                <strong class="hist-detail-meta-value" id="modalSimilarityStatus">—</strong>
+              </div>
+              <div class="hist-detail-meta-item">
+                <span class="hist-detail-meta-label">Similarity Score</span>
+                <strong class="hist-detail-meta-value" id="modalSimilarityScore">—</strong>
+              </div>
+              <div class="hist-detail-meta-item">
+                <span class="hist-detail-meta-label">Nearest Dataset Image</span>
+                <strong class="hist-detail-meta-value" id="modalNearestImage">—</strong>
+              </div>
+              <div class="hist-detail-meta-item">
+                <span class="hist-detail-meta-label">Nearest Dataset Class</span>
+                <strong class="hist-detail-meta-value" id="modalNearestClass">—</strong>
+              </div>
+              <div class="hist-detail-meta-item">
+                <span class="hist-detail-meta-label">Risk Level</span>
+                <strong class="hist-detail-meta-value" id="modalSimilarityRisk">—</strong>
+              </div>
+              <div class="hist-detail-meta-item hist-detail-meta-wide">
+                <span class="hist-detail-meta-label">Recommendation</span>
+                <strong class="hist-detail-meta-value" id="modalSimilarityRecommendation">—</strong>
+              </div>
+            </div>
+            <p class="hist-detail-similarity-note d-none" id="modalSimilarityMessage"></p>
+            <p class="hist-detail-similarity-academic d-none" id="modalSimilarityAcademic"></p>
+          </div>
+        </section>
+
+        <section class="hist-detail-section hist-detail-chars-section d-none" id="modalCharacteristicsSection" aria-labelledby="histDetailCharsHeading">
+          <h6 class="hist-detail-section-heading" id="histDetailCharsHeading">
+            <i class="bi bi-journal-bookmark" aria-hidden="true"></i> Ciri Utama Khat
+          </h6>
+          <div id="modalCharacteristics" class="hist-detail-chars"></div>
+        </section>
+
+        <section class="hist-detail-section" id="modalAlgorithmSection" aria-labelledby="histDetailAlgorithmHeading">
+          <h6 class="hist-detail-section-heading d-flex flex-wrap justify-content-between align-items-center gap-2" id="histDetailAlgorithmHeading">
+            <span><i class="bi bi-diagram-3" aria-hidden="true"></i> Detail Perhitungan Algoritma</span>
+            <button class="btn btn-sm btn-outline-teal" type="button" data-bs-toggle="collapse" data-bs-target="#modalAlgorithmCollapse" aria-expanded="false">
+              Lihat Detail
+            </button>
+          </h6>
+          <div class="collapse" id="modalAlgorithmCollapse">
+            <div id="modalAlgorithmCalc" class="algorithm-calc-modal-body"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="hist-detail-footer">
+        <button type="button" class="hist-detail-btn hist-detail-btn-secondary" data-bs-dismiss="modal">
+          <i class="bi bi-x-circle" aria-hidden="true"></i> Tutup
+        </button>
+        <a href="#" class="hist-detail-btn hist-detail-btn-primary d-none" id="modalDetailCalcBtn">
+          <i class="bi bi-calculator" aria-hidden="true"></i> Lihat Detail Perhitungan
+        </a>
+        <button type="button" class="hist-detail-btn hist-detail-btn-danger" id="modalDeleteBtn">
+          <i class="bi bi-trash" aria-hidden="true"></i> Hapus Riwayat
+        </button>
+        <a href="{{ url_for('classification.classify_image') }}" class="hist-detail-btn hist-detail-btn-primary">
+          <i class="bi bi-plus-circle" aria-hidden="true"></i> Klasifikasi Gambar Baru
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Delete confirmation modal #}
+<div class="modal fade" id="historyDeleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content hist-v2-modal">
+      <div class="modal-header">
+        <h5 class="modal-title">Hapus Riwayat Klasifikasi?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-0">Data riwayat prediksi akan dihapus dari sistem. File gambar asli tidak akan dihapus kecuali sistem memang dikonfigurasi untuk menghapusnya.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn hist-v2-btn-outline" data-bs-dismiss="modal">Batal</button>
+        <form method="post" id="deleteRecordForm" class="d-inline">
+          <button type="submit" class="btn btn-danger">Hapus Riwayat</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if total_predictions > 0 %}
+<script>
+  window.HISTORY_RECORDS = {{ history_records_json | tojson }};
+  window.HISTORY_QUERY_STRING = {{ export_qs | tojson }};
+  window.KHAT_CHARACTERISTICS = {{ khat_characteristics_catalog | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/khat_characteristics.js') }}"></script>
+<script src="{{ url_for('static', filename='js/algorithm_calculation_render.js') }}"></script>
+<script src="{{ url_for('static', filename='js/history.js') }}"></script>
+{% endif %}
+{% endblock %}

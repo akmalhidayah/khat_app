@@ -1,0 +1,544 @@
+{% extends "base.html" %}
+{% block title %}Manajemen Model{% endblock %}
+{% block page_container_class %}page-container-compact mm-page-container{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/training.css') }}">
+{% endblock %}
+{% block content %}
+{% set mgmt = model_management %}
+{% set tm = tm_info if is_tm_active and tm_info else global_tm_model_info %}
+{% set eval = eval_display %}
+{% set insights = page_insights %}
+{% set can_retrain = training_safety.can_retrain and dataset_ready %}
+
+<div class="train-v2 mm-v2">
+
+  {# 2. Page hero #}
+  <header class="train-v2-header mm-v2-header mm-v2-header-compact">
+    <div class="train-v2-header-text">
+      <p class="mm-v2-eyebrow">Arabic Khat AI · Model Management</p>
+      <h1 class="train-v2-title">Manajemen Model</h1>
+      <p class="train-v2-subtitle">Kelola model Teachable Machine, evaluasi performa, dan siapkan retraining berdasarkan hasil analisis dataset.</p>
+    </div>
+    <div class="train-v2-badges mm-v2-header-badges">
+      <span class="train-v2-badge ok"><i class="bi bi-box-seam"></i> Teachable Machine Aktif</span>
+      <span class="train-v2-badge {{ 'ok' if dataset_ready else 'warn' }}">
+        <i class="bi bi-{{ 'check-circle' if dataset_ready else 'exclamation-circle' }}"></i> {{ 'Dataset Siap' if dataset_ready else 'Dataset Belum Siap' }}
+      </span>
+      <span class="train-v2-badge {{ 'ok' if eval.has_eval else 'neutral' }}">
+        <i class="bi bi-graph-up"></i> {{ 'Evaluasi Tersedia' if eval.has_eval else 'Belum Dievaluasi' }}
+      </span>
+      <span class="train-v2-badge {{ 'ok' if insights.status_tone == 'success' else 'warn' }}">
+        <i class="bi bi-flag"></i> {{ insights.status_label }}
+      </span>
+    </div>
+  </header>
+
+  {# 3. Active model explanation #}
+  <div class="train-v2-alert info mm-v2-notice mm-v2-section-sm">
+    <i class="bi bi-info-circle me-2"></i>{{ mgmt.notice }}
+  </div>
+
+  {% if not dataset_ready %}
+  <section class="train-v2-card mm-v2-section-sm train-v2-prep-card" aria-label="Dataset perlu diproses">
+    <div class="train-v2-card-body mm-v2-card-body-compact">
+      <h6 class="mb-2"><i class="bi bi-exclamation-triangle me-2"></i>Dataset Perlu Diproses</h6>
+      <p class="mb-2 small">Dataset raw ({{ raw_count or 0 }} gambar) belum dibagi. Evaluasi memerlukan test set.</p>
+      <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-gold btn-sm" data-bs-toggle="modal" data-bs-target="#processDatasetModal">Proses &amp; Bagi Dataset</button>
+        <a href="{{ url_for('dataset.list_dataset') }}" class="btn btn-outline-secondary btn-sm">Manajemen Dataset</a>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# 4. Primary actions #}
+  <section class="mm-v2-actions mm-v2-section-sm" aria-label="Aksi model">
+    <a href="#upload-model" class="mm-v2-action-btn primary"><i class="bi bi-cloud-upload"></i> Upload Model Baru</a>
+    <a href="#upload-model" class="mm-v2-action-btn"><i class="bi bi-arrow-repeat"></i> Ganti Model Teachable Machine</a>
+    <form method="post" action="{{ url_for('evaluation.run_evaluation') }}" class="d-inline mm-v2-action-form">
+      <button type="submit" class="mm-v2-action-btn eval" {% if not dataset_ready %}disabled title="Proses dataset terlebih dahulu"{% endif %}>
+        <i class="bi bi-graph-up"></i> Jalankan Evaluasi
+      </button>
+    </form>
+    <a href="#retraining-workflow" class="mm-v2-action-btn"><i class="bi bi-journal-text"></i> Lihat Panduan Retraining</a>
+  </section>
+
+  <div class="mm-v2-grid-pair mm-v2-section-sm">
+  {# 5. Active Model card #}
+  <section class="train-v2-card mm-v2-active-card h-100" aria-label="Model aktif">
+    <div class="train-v2-card-head mm-v2-card-head-compact">
+      <span><i class="bi bi-check-circle-fill"></i> Model Aktif</span>
+      <span class="mm-v2-status-pill status-active">Active</span>
+    </div>
+    <div class="train-v2-card-body mm-v2-card-body-compact">
+      {% if is_tm_active and tm %}
+      <div class="mm-v2-active-grid mm-v2-active-grid-main">
+        <div class="mm-v2-meta-item"><span>Model Source</span><strong>{{ tm.model_source }}</strong></div>
+        <div class="mm-v2-meta-item"><span>Model Name</span><strong>{{ tm.model_name }}</strong></div>
+        <div class="mm-v2-meta-item"><span>Runtime</span><strong>{{ tm.model_runtime }}</strong></div>
+        <div class="mm-v2-meta-item"><span>Input Size</span><strong>224 × 224 px</strong></div>
+        <div class="mm-v2-meta-item mm-v2-meta-item-full"><span>Labels</span><strong>{% if tm and tm.labels %}{% for l in tm.labels %}{{ l.replace('_', ' ') }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}diwani, diwani jali, naskhi, tsuluts{% endif %}</strong></div>
+      </div>
+
+      <details class="mm-v2-tech-details">
+        <summary class="mm-v2-tech-details-summary">
+          <i class="bi bi-chevron-right mm-v2-tech-chevron" aria-hidden="true"></i>
+          <span>Detail Teknis Model</span>
+        </summary>
+        <div class="mm-v2-tech-details-body">
+          <div class="mm-v2-tech-row">
+            <span class="mm-v2-tech-label">Model File</span>
+            <div class="mm-v2-path-chip">
+              <code class="mm-v2-path-code">{{ tm.model_json_url }}</code>
+              <button type="button" class="mm-v2-copy-btn" data-copy="{{ tm.model_json_url }}" aria-label="Salin path model.json" title="Salin path">
+                <i class="bi bi-clipboard" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+          <div class="mm-v2-tech-row">
+            <span class="mm-v2-tech-label">Metadata File</span>
+            <div class="mm-v2-path-chip">
+              <code class="mm-v2-path-code">{{ tm.model_metadata_url }}</code>
+              <button type="button" class="mm-v2-copy-btn" data-copy="{{ tm.model_metadata_url }}" aria-label="Salin path metadata.json" title="Salin path">
+                <i class="bi bi-clipboard" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+          <div class="mm-v2-tech-row">
+            <span class="mm-v2-tech-label">Weights File</span>
+            <div class="mm-v2-path-chip">
+              <code class="mm-v2-path-code">{{ tm.model_weights_url }}</code>
+              <button type="button" class="mm-v2-copy-btn" data-copy="{{ tm.model_weights_url }}" aria-label="Salin path weights.bin" title="Salin path">
+                <i class="bi bi-clipboard" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+          <div class="mm-v2-tech-row mm-v2-tech-row-inline">
+            <span class="mm-v2-tech-label">Registered Version</span>
+            <strong class="mm-v2-tech-value">{% if active_model_version %}{{ active_model_version.model_version }}{% else %}—{% endif %}</strong>
+          </div>
+          <div class="mm-v2-tech-row mm-v2-tech-row-inline">
+            <span class="mm-v2-tech-label">Model Status</span>
+            <span class="mm-v2-status-pill status-active">Active</span>
+          </div>
+        </div>
+      </details>
+      {% else %}
+      <div class="empty-train">
+        <i class="bi bi-exclamation-triangle"></i>
+        <h6>Model Teachable Machine belum terpasang</h6>
+        <p>Unggah model.json, metadata.json, dan weights.bin untuk mengaktifkan prediksi.</p>
+        <a href="#upload-model" class="btn train-v2-btn-primary btn-sm">Upload Model</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# 6. Upload Model #}
+  <section class="train-v2-card h-100" id="upload-model">
+    <div class="train-v2-card-head mm-v2-card-head-compact">
+      <span><i class="bi bi-cloud-upload"></i> Upload Model Teachable Machine</span>
+    </div>
+    <div class="train-v2-card-body mm-v2-card-body-compact">
+      <p class="train-v2-hint mb-3">Unggah export TensorFlow.js — file terpisah atau arsip ZIP yang berisi model.json, metadata.json, dan weights.bin.</p>
+      <form method="post" action="{{ url_for('model_management.upload_tm_model') }}" enctype="multipart/form-data" id="tmUploadForm">
+        <div class="mm-v2-upload-tabs">
+          <button type="button" class="mm-v2-tab active" data-upload-tab="files">File Terpisah</button>
+          <button type="button" class="mm-v2-tab" data-upload-tab="zip">Arsip ZIP</button>
+        </div>
+
+        <div class="mm-v2-upload-panel active" data-upload-panel="files">
+          <div class="mm-v2-file-grid">
+            {% for spec in [('model.json', 'model_json', 'bi-filetype-json'), ('metadata.json', 'metadata_json', 'bi-file-earmark-text'), ('weights.bin', 'weights_bin', 'bi-file-binary')] %}
+            <label class="mm-v2-file-drop" data-expected="{{ spec[0] }}">
+              <input type="file" name="{{ spec[1] }}" class="visually-hidden tm-file-input" data-expected="{{ spec[0] }}" data-label="{{ spec[0] }}">
+              <i class="bi {{ spec[2] }}"></i>
+              <span class="mm-v2-file-name" data-default="{{ spec[0] }}">{{ spec[0] }}</span>
+              <span class="mm-v2-file-meta text-muted small">Belum dipilih</span>
+              <span class="mm-v2-file-status" aria-live="polite"></span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="mm-v2-upload-panel" data-upload-panel="zip">
+          <label class="mm-v2-zip-drop" id="tmZipDrop">
+            <input type="file" name="tm_model_zip" accept=".zip,application/zip" class="visually-hidden" id="tmZipInput">
+            <i class="bi bi-file-zip"></i>
+            <span id="tmZipLabel">Seret arsip ZIP atau klik untuk memilih</span>
+            <span class="mm-v2-file-meta text-muted small" id="tmZipMeta"></span>
+            <span class="mm-v2-file-status" id="tmZipStatus" aria-live="polite"></span>
+          </label>
+        </div>
+
+        <div class="mm-v2-upload-summary mt-3" id="tmUploadSummary" aria-live="polite">
+          <p class="mm-v2-upload-summary-title">Validasi Model</p>
+          <ul class="mm-v2-validation-checks">
+            <li data-check="model_json"><i class="bi bi-circle"></i><span>model.json</span></li>
+            <li data-check="metadata_json"><i class="bi bi-circle"></i><span>metadata.json</span></li>
+            <li data-check="weights_bin"><i class="bi bi-circle"></i><span>weights.bin</span></li>
+            <li data-check="labels"><i class="bi bi-circle"></i><span>Labels: diwani, diwani jali, naskhi, tsuluts</span></li>
+            <li data-check="input_size"><i class="bi bi-circle"></i><span>Input size: 224 × 224 px</span></li>
+          </ul>
+          <p class="train-v2-hint mb-0 mt-2"><i class="bi bi-shield-check me-1"></i>Model lama dibackup otomatis sebelum diganti; versi baru disimpan ke riwayat.</p>
+        </div>
+
+        <button type="submit" class="btn train-v2-btn-primary w-100 mt-3" id="tmUploadBtn">
+          <i class="bi bi-cloud-upload me-1"></i> Upload &amp; Aktifkan Model
+        </button>
+      </form>
+    </div>
+  </section>
+  </div>
+
+  {# 7. Evaluation #}
+  <section class="train-v2-card mm-v2-section-sm" id="evaluasi-model">
+    <div class="train-v2-card-head mm-v2-card-head-compact">
+      <span><i class="bi bi-graph-up"></i> Evaluasi Model Aktif</span>
+      {% if eval.has_eval %}<span class="mm-v2-status-pill status-active">{{ eval.model_source }}</span>{% endif %}
+    </div>
+    <div class="train-v2-card-body mm-v2-card-body-compact">
+      {% if eval.has_eval %}
+      <div class="metrics-grid mm-v2-metrics-compact mb-3">
+        <div class="metric"><span>Accuracy</span><strong>{{ eval.accuracy }}%</strong></div>
+        <div class="metric"><span>Precision</span><strong>{{ eval.precision }}%</strong></div>
+        <div class="metric"><span>Recall</span><strong>{{ eval.recall }}%</strong></div>
+        <div class="metric"><span>F1-score</span><strong>{{ eval.f1_score }}%</strong></div>
+      </div>
+      <div class="mm-v2-eval-counts mb-3">
+        <div><span>Total dataset diproses</span><strong>{{ eval.total_dataset_processed or '—' }}</strong></div>
+        <div><span>Total gambar uji (holdout)</span><strong>{{ eval.test_samples or '—' }}</strong></div>
+        <div><span>Prediksi benar</span><strong class="text-success">{{ eval.correct_predictions or '—' }}</strong></div>
+        <div><span>Prediksi salah</span><strong class="text-danger">{{ eval.incorrect_predictions or '—' }}</strong></div>
+      </div>
+
+      {% if eval.confusion_matrix %}
+      <div class="mm-v2-cm-wrap mb-3">
+        <p class="mm-v2-cm-title">Confusion Matrix</p>
+        <p class="mm-v2-cm-note">Baris = kelas sebenarnya · Kolom = kelas prediksi · <span class="cm-legend-diag">hijau</span> = benar · <span class="cm-legend-off">oranye</span> = salah · <span class="cm-legend-zero">—</span> = tidak ada kasus</p>
+        <div class="mm-v2-cm-scroll">
+          <table class="mm-v2-cm-table">
+            <thead>
+              <tr>
+                <th class="sticky-col">True \ Pred</th>
+                {% for label in eval.class_labels %}<th>Pred {{ label }}</th>{% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in eval.confusion_matrix %}
+              {% set row_i = loop.index0 %}
+              <tr>
+                <th class="sticky-col">True {{ eval.class_labels[row_i] }}</th>
+                {% for cell in row %}
+                {% set col_i = loop.index0 %}
+                {% set is_diag = col_i == row_i %}
+                <td class="{% if is_diag and cell > 0 %}cm-diag{% elif is_diag %}cm-diag cm-zero{% elif cell > 0 %}cm-off{% else %}cm-zero{% endif %}">{% if cell > 0 %}{{ cell }}{% else %}<span class="cm-empty" aria-hidden="true">—</span>{% endif %}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if eval.per_class_rows %}
+      <p class="small fw-semibold mb-2">Performa Per Kelas</p>
+      <div class="mm-v2-table-scroll">
+        <table class="table table-sm mm-v2-perclass-table">
+          <thead><tr><th>Kelas</th><th>Precision</th><th>Recall</th><th>F1</th><th>Support</th></tr></thead>
+          <tbody>
+            {% for row in eval.per_class_rows %}
+            <tr class="{% if row.below_target %}row-warn{% endif %}">
+              <td>{{ row.class_name }}</td>
+              <td>{{ row.precision }}%</td>
+              <td>{{ row.recall }}%</td>
+              <td>{{ row.f1_score }}%</td>
+              <td>{{ row.support }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {% if eval.evaluated_at %}
+      <p class="train-v2-hint mb-0 mt-2"><i class="bi bi-clock me-1"></i>Dievaluasi: {{ eval.evaluated_at }}</p>
+      {% endif %}
+      <a href="{{ url_for('evaluation.evaluation_page') }}" class="btn btn-outline-primary btn-sm mt-3">Lihat Evaluasi Lengkap</a>
+      {% else %}
+      <div class="empty-train">
+        <i class="bi bi-graph-up"></i>
+        <h6>Belum ada evaluasi</h6>
+        <p>Jalankan evaluasi pada test set untuk mengukur performa model Teachable Machine aktif.</p>
+        <form method="post" action="{{ url_for('evaluation.run_evaluation') }}">
+          <button type="submit" class="btn train-v2-btn-primary btn-sm" {% if not dataset_ready %}disabled{% endif %}>Jalankan Evaluasi</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# 8. Retraining workflow #}
+  <div class="mm-v2-grid-pair mm-v2-section-sm">
+  <section class="train-v2-card h-100" id="retraining-workflow">
+    <div class="train-v2-card-head mm-v2-card-head-compact">
+      <span><i class="bi bi-signpost-split"></i> Alur Retraining Teachable Machine</span>
+    </div>
+    <div class="train-v2-card-body mm-v2-card-body-compact">
+      <div class="mm-v2-workflow-stepper">
+        {% for step in mgmt.retraining_workflow %}
+        <div class="mm-v2-workflow-step-item">
+          <div class="mm-v2-workflow-step">{{ step.step }}</div>
+          <i class="bi {{ step.icon }}"></i>
+          <span>{{ step.title }}</span>
+        </div>
+        {% if not loop.last %}<div class="mm-v2-workflow-connector" aria-hidden="true"></div>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {# 9. Retraining recommendations #}
+  <section class="train-v2-card h-100">
+    <div class="train-v2-card-head mm-v2-card-head-compact">
+      <span><i class="bi bi-lightbulb"></i> Rekomendasi Retraining</span>
+    </div>
+    <div class="train-v2-card-body mm-v2-card-body-compact">
+      <ul class="train-v2-checklist-structured mm-v2-rec-checklist">
+        {% for item in mgmt.retraining_checklist %}
+        <li class="status-{{ item.status }}">
+          <span class="train-v2-check-icon">
+            {% if item.status == 'done' %}<i class="bi bi-check-circle-fill"></i>
+            {% elif item.status == 'needs_attention' %}<i class="bi bi-exclamation-circle-fill"></i>
+            {% else %}<i class="bi bi-arrow-right-circle"></i>{% endif %}
+          </span>
+          <span class="train-v2-check-text">{{ item.text }}</span>
+          <span class="mm-v2-check-label status-{{ item.status }}">
+            {% if item.status == 'done' %}Done{% elif item.status == 'needs_attention' %}Needs Attention{% else %}Recommended{% endif %}
+          </span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+  </div>
+
+  {# 10. Model Version History #}
+  <section class="train-v2-card mm-v2-section-sm" id="model-versions">
+    <div class="train-v2-card-head mm-v2-card-head-compact">
+      <span><i class="bi bi-clock-history"></i> Riwayat Versi Model</span>
+      {% if model_versions_has_more %}
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="toggleAllVersions" data-expanded="false" data-label-show="Lihat Semua Versi ({{ model_versions_total }})" data-label-hide="Sembunyikan Versi Lama">
+        Lihat Semua Versi ({{ model_versions_total }})
+      </button>
+      {% endif %}
+    </div>
+    <div class="train-v2-card-body mm-v2-card-body-compact p-0">
+      {% if model_versions %}
+      <div class="mm-v2-version-scroll">
+        <table class="table table-sm mm-v2-version-table mb-0">
+          <thead class="mm-v2-version-thead">
+            <tr>
+              <th>Versi</th>
+              <th>Sumber</th>
+              <th>Nama Model</th>
+              <th>Upload</th>
+              <th>Labels</th>
+              <th>Input</th>
+              <th>Akurasi</th>
+              <th>Status</th>
+              <th class="text-end">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for v in model_versions %}
+            <tr class="mm-v2-version-row {% if v.is_active %}row-active{% endif %} {% if loop.index > 5 %}mm-v2-version-hidden{% endif %}" data-version-row>
+              <td class="text-nowrap">{{ v.model_version }}</td>
+              <td class="text-nowrap">{{ v.model_source }}</td>
+              <td class="mm-v2-col-name">{{ v.model_name }}</td>
+              <td class="text-nowrap small">{{ v.upload_date or v.created_at or '—' }}</td>
+              <td class="mm-v2-col-labels small">{{ v.labels }}</td>
+              <td class="text-nowrap small">{{ v.input_size }}</td>
+              <td class="text-nowrap">{% if v.evaluation_accuracy is not none %}{{ v.evaluation_accuracy }}%{% else %}—{% endif %}</td>
+              <td class="text-nowrap">
+                <span class="mm-v2-status-pill status-{{ v.status }}">{{ v.status|capitalize }}</span>
+              </td>
+              <td class="text-end text-nowrap">
+                {% if v.is_active %}
+                <span class="mm-v2-status-pill status-active">Aktif</span>
+                {% else %}
+                <div class="dropdown mm-v2-action-dropdown">
+                  <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Aksi</button>
+                  <ul class="dropdown-menu dropdown-menu-end">
+                    {% if v.can_activate %}
+                    <li>
+                      <form method="post" action="{{ url_for('model_management.activate_model_version_route', version_id=v.id) }}">
+                        <button type="submit" class="dropdown-item">Aktifkan</button>
+                      </form>
+                    </li>
+                    {% endif %}
+                    {% if v.status != 'archived' %}
+                    <li>
+                      <form method="post" action="{{ url_for('model_management.archive_model_version_route', version_id=v.id) }}">
+                        <button type="submit" class="dropdown-item">Arsipkan</button>
+                      </form>
+                    </li>
+                    {% endif %}
+                    {% if v.can_delete %}
+                    <li>
+                      <form method="post" action="{{ url_for('model_management.delete_model_version_route', version_id=v.id) }}" onsubmit="return confirm('Hapus versi model ini?');">
+                        <button type="submit" class="dropdown-item text-danger">Hapus</button>
+                      </form>
+                    </li>
+                    {% endif %}
+                  </ul>
+                </div>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-3">
+        <p class="train-v2-hint mb-0">Belum ada riwayat versi. Upload model Teachable Machine untuk mendaftarkan versi pertama.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# 11. Experimental internal training — collapsed #}
+  <details class="train-v2-card mm-v2-section-sm mm-v2-experimental">
+    <summary class="train-v2-card-head mm-v2-exp-summary mm-v2-card-head-compact">
+      <span><i class="bi bi-flask"></i> Eksperimen Training Internal — Non-Aktif untuk Prediksi</span>
+      <span class="mm-v2-status-pill status-inactive">Eksperimental</span>
+    </summary>
+    <div class="train-v2-card-body mm-v2-card-body-compact">
+      <p class="train-v2-hint-warn mb-3 small">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Modul ini hanya untuk eksperimen Keras/TensorFlow di server dan tidak menggantikan model Teachable Machine yang aktif untuk prediksi.
+      </p>
+      {% if is_training_running %}
+      <div class="train-v2-alert info mb-3 small">
+        <i class="bi bi-hourglass-split me-2"></i>{{ training_status.message or 'Training eksperimental berjalan...' }}
+      </div>
+      {% endif %}
+      <form method="post" action="{{ url_for('model_management.start_training') }}" id="trainingForm" novalidate>
+        <div class="train-v2-form-row">
+          <div class="training-form-group">
+            <label class="form-label" for="epochs">Epochs</label>
+            <input type="number" class="form-control form-control-sm" id="epochs" name="epochs" value="{{ training_meta.epochs if training_meta and training_meta.epochs else 12 }}" min="1" max="100">
+          </div>
+          <div class="training-form-group">
+            <label class="form-label" for="batch_size">Batch Size</label>
+            <input type="number" class="form-control form-control-sm" id="batch_size" name="batch_size" value="{{ training_meta.batch_size if training_meta and training_meta.batch_size else 32 }}" min="1" max="128">
+          </div>
+          <div class="training-form-group">
+            <label class="form-label" for="learning_rate">Learning Rate</label>
+            <input type="text" class="form-control form-control-sm" id="learning_rate" name="learning_rate" value="{{ training_meta.learning_rate if training_meta and training_meta.learning_rate else '0.0001' }}">
+          </div>
+        </div>
+        <div class="training-form-group mt-2">
+          <label class="form-label fw-semibold" for="model_architecture">Arsitektur Eksperimental</label>
+          <select class="form-select form-select-sm" name="model_architecture" id="model_architecture">
+            <option value="efficientnetb0">EfficientNetB0 (Experimental)</option>
+            <option value="vgg16">VGG16 Transfer Learning</option>
+            <option value="mobilenetv2">MobileNetV2 (Lightweight)</option>
+          </select>
+        </div>
+        {% if not can_retrain and training_safety.block_reason %}
+        <div class="train-v2-safety-warn mt-2 small"><i class="bi bi-shield-exclamation me-1"></i>{{ training_safety.block_reason }}</div>
+        {% endif %}
+        <div class="train-v2-actions mt-3">
+          {% if button_mode == 'running' %}
+          <button type="button" class="btn train-btn w-100" disabled><span class="spinner-border spinner-border-sm me-2"></span>Training Eksperimental...</button>
+          {% else %}
+          <button type="button" class="btn train-btn w-100 train-v2-btn-secondary" id="startTrainingBtnPrimary" {% if not can_retrain %}disabled{% endif %}>
+            <i class="bi bi-flask me-1"></i>Jalankan Training Eksperimental
+          </button>
+          {% endif %}
+        </div>
+      </form>
+      {% if summary_state == 'history' and history %}
+      <details class="train-v2-details mt-3">
+        <summary class="small">Metrik Training Eksperimental Terakhir</summary>
+        <div class="train-v2-details-body">
+          <div class="metrics-grid mm-v2-metrics-compact">
+            <div class="metric"><span>Training Acc</span><strong>{{ (history['accuracy'][-1] * 100)|round(2) }}%</strong></div>
+            <div class="metric"><span>Validation Acc</span><strong>{{ (history['val_accuracy'][-1] * 100)|round(2) }}%</strong></div>
+            <div class="metric"><span>Training Loss</span><strong>{{ history['loss'][-1]|round(4) }}</strong></div>
+            <div class="metric"><span>Validation Loss</span><strong>{{ history['val_loss'][-1]|round(4) }}</strong></div>
+          </div>
+        </div>
+      </details>
+      {% endif %}
+    </div>
+  </details>
+
+  {# 12. Detector #}
+  <details class="train-v2-card mm-v2-section-sm">
+    <summary class="train-v2-card-head mm-v2-card-head-compact"><span><i class="bi bi-shield-check"></i> Detektor Khat / Non-Khat</span></summary>
+    <div class="train-v2-card-body mm-v2-card-body-compact">
+      <p class="train-v2-hint mb-2 small">Filter gambar non-kaligrafi sebelum klasifikasi empat kelas Khat.</p>
+      <div class="train-v2-detector-grid mb-3">
+        <div><span>Status</span><strong>{% if detector_eval.get('binary_accuracy') is not none %}Terlatih{% else %}Belum dievaluasi{% endif %}</strong></div>
+        <div><span>Accept threshold</span><strong>{{ (khat_thresholds.accept * 100)|round(0) }}%</strong></div>
+        <div><span>Reject threshold</span><strong>{{ (khat_thresholds.reject * 100)|round(0) }}%</strong></div>
+      </div>
+      <form method="post" action="{{ url_for('model_management.train_khat_detector_route') }}" class="d-flex flex-wrap gap-2 align-items-end">
+        <div>
+          <label class="form-label small">Epochs</label>
+          <input type="number" name="detector_epochs" class="form-control form-control-sm" value="8" min="3" max="20" style="width:80px">
+        </div>
+        <button type="submit" class="btn btn-outline-warning btn-sm">Latih Detektor</button>
+        <button type="submit" formaction="{{ url_for('model_management.sync_detector_dataset_route') }}" class="btn btn-outline-secondary btn-sm">Sync Dataset</button>
+      </form>
+    </div>
+  </details>
+</div>
+
+<div class="modal fade" id="processDatasetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Proses Dataset?</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body"><p>Bagi dataset raw ke train/validation/test (70:15:15).</p></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+        <form method="post" action="{{ url_for('model_management.process_dataset') }}" id="processDatasetForm" class="d-inline">
+          <button type="submit" class="btn btn-gold" id="processDatasetBtn">Ya, Proses</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="trainingConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Jalankan Training Eksperimental?</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body"><p>Training Keras di server tidak mengganti model Teachable Machine aktif. Lanjutkan eksperimen?</p></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn train-btn" id="confirmTrainingBtn" style="width:auto;min-width:160px;">Mulai Eksperimen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.TRAINING_DATA = {
+  datasetReady: {{ 'true' if dataset_ready else 'false' }},
+  canRetrain: {{ 'true' if can_retrain else 'false' }},
+  buttonMode: {{ button_mode|tojson }},
+  isTrainingRunning: {{ 'true' if is_training_running else 'false' }},
+  isTmActive: {{ 'true' if is_tm_active else 'false' }},
+  statusUrl: {{ url_for('model_management.training_status_api')|tojson }},
+  versionsHasMore: {{ 'true' if model_versions_has_more else 'false' }},
+  versionsTotal: {{ model_versions_total|default(0) }}
+};
+</script>
+<script src="{{ url_for('static', filename='js/training.js') }}"></script>
+{% endblock %}

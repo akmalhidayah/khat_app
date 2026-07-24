@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block title %}Upload Dataset{% endblock %}
+{% block page_container_class %}page-container-compact upload-page-container{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dataset.css') }}">
+{% endblock %}
+{% block content %}
+{% set class_labels_id = {'naskhi': 'Naskhi', 'diwani': 'Diwani', 'diwani_jali': 'Diwani Jali', 'tsuluts': 'Tsuluts'} %}
+
+<div class="upload-page-v2">
+
+  <section class="upload-page-hero" aria-label="Upload dataset">
+    <div class="upload-page-hero-text">
+      <p class="upload-page-eyebrow">Dataset Workspace</p>
+      <h1 class="upload-page-title">Upload Dataset</h1>
+      <p class="upload-page-subtitle">Tambahkan gambar kaligrafi Arab untuk kebutuhan training, evaluasi, dan peningkatan akurasi model.</p>
+    </div>
+    <div class="upload-page-badges">
+      <span class="upload-badge"><i class="bi bi-image" aria-hidden="true"></i> JPG, JPEG, PNG, WEBP</span>
+      <span class="upload-badge"><i class="bi bi-file-earmark-zip" aria-hidden="true"></i> ZIP Supported</span>
+      {% if upload_settings.auto_optimize_on_upload %}
+      <span class="upload-badge accent"><i class="bi bi-magic" aria-hidden="true"></i> Auto Optimize Enabled</span>
+      {% endif %}
+      <span class="upload-badge"><i class="bi bi-hdd" aria-hidden="true"></i> Max {{ upload_max_size_mb }} MB</span>
+    </div>
+  </section>
+
+  <section class="upload-workflow-card" aria-label="Alur upload dataset">
+    <div class="upload-workflow-head">
+      <i class="bi bi-diagram-3" aria-hidden="true"></i>
+      <strong>Alur Upload Dataset</strong>
+    </div>
+    <ol class="upload-workflow-steps">
+      <li><span>1</span> Pilih kelas</li>
+      <li><span>2</span> Pilih gambar atau ZIP</li>
+      <li><span>3</span> Validasi format</li>
+      <li><span>4</span> Optimasi gambar</li>
+      <li><span>5</span> Simpan ke dataset</li>
+      <li><span>6</span> Siap training</li>
+    </ol>
+  </section>
+
+  <div class="upload-layout">
+
+    {# ── Left column ── #}
+    <div class="upload-col-main">
+
+      <article class="upload-card">
+        <header class="upload-card-head">
+          <span class="upload-card-icon" aria-hidden="true"><i class="bi bi-cloud-upload"></i></span>
+          <div>
+            <h2 class="upload-card-title">Upload Dataset Images</h2>
+            <p class="upload-card-subtitle">Unggah gambar berdasarkan kelas khat.</p>
+          </div>
+        </header>
+        <div class="upload-card-body">
+          <form method="post" enctype="multipart/form-data" id="uploadDatasetForm" class="upload-form">
+            <div class="upload-field">
+              <label class="upload-label" for="classNameSelect">Kelas Khat</label>
+              <div class="upload-select-wrap">
+                <i class="bi bi-tag" aria-hidden="true"></i>
+                <select name="class_name" id="classNameSelect" class="upload-select" required>
+                  {% for class_name in class_labels %}
+                  <option value="{{ class_name }}">{{ class_labels_id.get(class_name, class_name.replace('_', ' ').title()) }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <p class="upload-helper">Pilih kelas yang sesuai dengan gambar yang akan diunggah.</p>
+            </div>
+
+            <div class="upload-field">
+              <span class="upload-label" id="imageUploadLabel">Gambar</span>
+              <div
+                class="upload-dropzone"
+                id="uploadDropzone"
+                role="button"
+                tabindex="0"
+                aria-labelledby="imageUploadLabel"
+                aria-describedby="imageUploadHint"
+              >
+                <input
+                  id="datasetImageInput"
+                  type="file"
+                  name="images"
+                  class="upload-file-input"
+                  accept=".jpg,.jpeg,.png,.webp"
+                  multiple
+                  required
+                  aria-label="Pilih gambar dataset"
+                >
+                <div class="upload-dropzone-inner" id="uploadDropzoneInner">
+                  <div class="upload-dropzone-icon" aria-hidden="true"><i class="bi bi-cloud-arrow-up"></i></div>
+                  <p class="upload-dropzone-title">Drag &amp; drop gambar di sini</p>
+                  <p class="upload-dropzone-sub">atau klik untuk memilih file</p>
+                  <p class="upload-dropzone-formats" id="imageUploadHint">JPG, JPEG, PNG, WEBP</p>
+                  <p class="upload-dropzone-note">Gambar akan otomatis dioptimasi setelah upload.</p>
+                </div>
+                <div class="upload-dropzone-selected d-none" id="imageSelectedSummary">
+                  <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+                  <div>
+                    <strong id="imageSelectedCount">0 file dipilih</strong>
+                    <span id="imageSelectedSize">—</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="upload-summary d-none" id="imageFileSummary" aria-live="polite"></div>
+
+            <div class="upload-alert-warn" role="note">
+              <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+              <p>File duplikat akan dilewati otomatis berdasarkan hash file. Duplikasi akan ditampilkan sebagai peringatan, bukan error.</p>
+            </div>
+
+            <div class="upload-actions">
+              <button type="submit" class="upload-btn-primary" id="uploadSubmitBtn" disabled>
+                <i class="bi bi-upload" aria-hidden="true"></i>
+                <span>Upload Image(s)</span>
+              </button>
+              <a href="{{ url_for('dataset.list_dataset') }}" class="upload-btn-secondary">
+                <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                <span>Kembali ke Dataset</span>
+              </a>
+            </div>
+          </form>
+        </div>
+      </article>
+
+    </div>
+
+    {# ── Right column ── #}
+    <div class="upload-col-side">
+
+      <article class="upload-card">
+        <header class="upload-card-head">
+          <span class="upload-card-icon muted" aria-hidden="true"><i class="bi bi-eye"></i></span>
+          <div>
+            <h2 class="upload-card-title">Selected Files Preview</h2>
+            <p class="upload-card-subtitle">Pratinjau gambar yang dipilih.</p>
+          </div>
+        </header>
+        <div class="upload-card-body">
+          <div class="upload-preview-empty" id="previewEmpty">
+            <div class="upload-preview-empty-icon" aria-hidden="true"><i class="bi bi-image"></i></div>
+            <p class="upload-preview-empty-title">Belum ada gambar dipilih</p>
+            <p class="upload-preview-empty-hint">Preview akan muncul setelah Anda memilih gambar.</p>
+          </div>
+          <div class="upload-preview-content d-none" id="previewContent">
+            <div class="upload-preview-main">
+              <img id="previewImage" class="upload-preview-img" alt="Pratinjau gambar terpilih">
+            </div>
+            <div class="upload-preview-meta">
+              <div class="upload-preview-meta-row"><span>Total file</span><strong id="previewFileCount">0</strong></div>
+              <div class="upload-preview-meta-row"><span>Total ukuran</span><strong id="previewTotalSize">—</strong></div>
+              <div class="upload-preview-meta-row"><span>Kelas</span><strong id="previewClassLabel">—</strong></div>
+              <div class="upload-preview-meta-row"><span>Format</span><strong id="previewFormatSummary">—</strong></div>
+            </div>
+            <div class="upload-thumb-grid" id="filePreviewList"></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="upload-card">
+        <header class="upload-card-head">
+          <span class="upload-card-icon" aria-hidden="true"><i class="bi bi-file-earmark-zip"></i></span>
+          <div>
+            <h2 class="upload-card-title">Import Dataset ZIP</h2>
+            <p class="upload-card-subtitle">Unggah dataset dalam struktur folder kelas.</p>
+          </div>
+        </header>
+        <div class="upload-card-body">
+          <div class="upload-info-banner">
+            <i class="bi bi-info-circle" aria-hidden="true"></i>
+            <p>Untuk menjaga stabilitas aplikasi, gambar akan otomatis di-resize dan dikompresi setelah upload. File original tetap dapat disimpan sebagai raw dataset.</p>
+          </div>
+
+          <div class="upload-req-grid">
+            <div class="upload-req-row"><span>Format</span><strong>.zip</strong></div>
+            <div class="upload-req-row"><span>Max size</span><strong>{{ upload_max_size_mb }} MB</strong></div>
+            <div class="upload-req-row"><span>Auto optimization</span><strong>Max {{ upload_settings.max_image_dimension }}px · Q{{ upload_settings.jpeg_quality }}</strong></div>
+            <div class="upload-req-row"><span>Image formats</span><strong>JPG, PNG, WEBP</strong></div>
+          </div>
+
+          <form id="zipUploadForm" class="upload-form" novalidate>
+            <div class="upload-field">
+              <span class="upload-label" id="zipUploadLabel">File ZIP</span>
+              <div
+                class="upload-dropzone upload-dropzone-zip"
+                id="zipDropzone"
+                role="button"
+                tabindex="0"
+                aria-labelledby="zipUploadLabel"
+              >
+                <input
+                  id="datasetZipInput"
+                  type="file"
+                  name="dataset_zip"
+                  class="upload-file-input"
+                  accept=".zip"
+                  aria-label="Pilih file ZIP dataset"
+                >
+                <div class="upload-dropzone-inner" id="zipDropzoneInner">
+                  <div class="upload-dropzone-icon zip" aria-hidden="true"><i class="bi bi-file-earmark-zip"></i></div>
+                  <p class="upload-dropzone-title">Pilih atau drag file ZIP dataset</p>
+                  <p class="upload-dropzone-sub">Maksimal {{ upload_max_size_mb }} MB</p>
+                  <p class="upload-dropzone-note">File akan diekstrak, divalidasi, dan dioptimasi otomatis.</p>
+                </div>
+                <div class="upload-dropzone-selected d-none" id="zipSelectedSummary">
+                  <i class="bi bi-file-earmark-zip-fill" aria-hidden="true"></i>
+                  <div>
+                    <strong id="zipSelectedName">—</strong>
+                    <span id="zipSelectedSize">—</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="zipUploadAlert" class="upload-inline-alert d-none" role="alert"></div>
+
+            <div id="zipUploadProgressWrap" class="upload-progress-wrap d-none" aria-live="polite">
+              <div class="upload-progress-head">
+                <span id="zipUploadStatusText"><i class="bi bi-arrow-up-circle" aria-hidden="true"></i> Uploading...</span>
+                <strong id="zipUploadPercent">0%</strong>
+              </div>
+              <div class="upload-progress-track">
+                <div id="zipUploadProgressBar" class="upload-progress-bar"></div>
+              </div>
+              <small id="zipUploadSubStatus" class="upload-progress-sub">Mohon tunggu, jangan tutup halaman.</small>
+            </div>
+
+            <button type="submit" class="upload-btn-zip" id="zipUploadBtn">
+              <i class="bi bi-file-earmark-arrow-up" aria-hidden="true"></i>
+              <span>Import ZIP Dataset</span>
+            </button>
+          </form>
+
+          <div class="upload-zip-guide">
+            <span class="upload-zip-guide-label">Struktur ZIP yang Disarankan</span>
+            <pre class="upload-zip-guide-tree">dataset.zip
+├── naskhi/
+├── diwani/
+├── diwani_jali/
+└── tsuluts/</pre>
+            <p class="upload-zip-guide-note">Nama folder harus sesuai dengan nama kelas agar label dapat dikenali otomatis.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="upload-card">
+        <header class="upload-card-head">
+          <span class="upload-card-icon" aria-hidden="true"><i class="bi bi-sliders"></i></span>
+          <div>
+            <h2 class="upload-card-title">Pengaturan Upload &amp; Optimasi</h2>
+            <p class="upload-card-subtitle">Konfigurasi batas upload dan kualitas optimasi.</p>
+          </div>
+        </header>
+        <div class="upload-card-body">
+          <form method="post" action="{{ url_for('dataset.save_dataset_upload_settings') }}" class="upload-settings-form">
+            <div class="upload-settings-grid">
+              <div class="upload-field compact">
+                <label class="upload-label" for="maxUploadMb">Max Upload Size</label>
+                <div class="upload-input-wrap">
+                  <input type="number" class="upload-input" id="maxUploadMb" name="max_upload_size_mb" value="{{ upload_settings.max_upload_size_mb }}" min="100" max="2048">
+                  <span class="upload-input-suffix">MB</span>
+                </div>
+              </div>
+              <div class="upload-field compact">
+                <label class="upload-label" for="maxDimension">Max Dimension</label>
+                <div class="upload-input-wrap">
+                  <input type="number" class="upload-input" id="maxDimension" name="max_image_dimension" value="{{ upload_settings.max_image_dimension }}" min="128" max="2048">
+                  <span class="upload-input-suffix">px</span>
+                </div>
+              </div>
+              <div class="upload-field compact">
+                <label class="upload-label" for="jpegQuality">JPEG Quality</label>
+                <input type="number" class="upload-input" id="jpegQuality" name="jpeg_quality" value="{{ upload_settings.jpeg_quality }}" min="50" max="100">
+              </div>
+              <div class="upload-field compact">
+                <label class="upload-label" for="outputFormat">Output Format</label>
+                <div class="upload-select-wrap">
+                  <select class="upload-select" id="outputFormat" name="output_format">
+                    <option value="JPEG" {% if upload_settings.output_format == 'JPEG' %}selected{% endif %}>JPEG</option>
+                    <option value="WEBP" {% if upload_settings.output_format == 'WEBP' %}selected{% endif %}>WebP</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="upload-toggle-list">
+              <label class="upload-toggle">
+                <input type="checkbox" name="keep_raw_files" {% if upload_settings.keep_raw_files %}checked{% endif %}>
+                <span class="upload-toggle-track" aria-hidden="true"></span>
+                <span class="upload-toggle-text">
+                  <strong>Simpan file raw</strong>
+                  <small>Menyimpan salinan original di folder raw dataset.</small>
+                </span>
+              </label>
+              <label class="upload-toggle">
+                <input type="checkbox" name="auto_optimize_on_upload" {% if upload_settings.auto_optimize_on_upload %}checked{% endif %}>
+                <span class="upload-toggle-track" aria-hidden="true"></span>
+                <span class="upload-toggle-text">
+                  <strong>Auto optimize saat upload</strong>
+                  <small>Resize dan kompresi otomatis setelah unggah.</small>
+                </span>
+              </label>
+              <label class="upload-toggle">
+                <input type="checkbox" name="generate_model_ready_images" {% if upload_settings.generate_model_ready_images %}checked{% endif %}>
+                <span class="upload-toggle-track" aria-hidden="true"></span>
+                <span class="upload-toggle-text">
+                  <strong>Generate model-ready 224×224</strong>
+                  <small>Menyiapkan gambar ukuran input Teachable Machine.</small>
+                </span>
+              </label>
+            </div>
+
+            <button type="submit" class="upload-btn-save">
+              <i class="bi bi-check2-circle" aria-hidden="true"></i>
+              <span>Simpan Pengaturan</span>
+            </button>
+          </form>
+        </div>
+      </article>
+
+    </div>
+  </div>
+</div>
+
+<script>
+window.DATASET_UPLOAD_MAX_BYTES = {{ upload_max_size_bytes|tojson }};
+window.DATASET_UPLOAD_MAX_MB = {{ upload_max_size_mb|tojson }};
+window.DATASET_UPLOAD_CHUNK_BYTES = {{ (upload_chunk_size_mb * 1024 * 1024)|tojson }};
+window.DATASET_ZIP_UPLOAD_URL = {{ url_for('dataset.upload_dataset_zip')|tojson }};
+window.DATASET_ZIP_CHUNK_URL = {{ url_for('dataset.upload_dataset_zip_chunk')|tojson }};
+window.DATASET_ZIP_FINALIZE_URL = {{ url_for('dataset.finalize_dataset_zip_chunk')|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/dataset_upload.js') }}"></script>
+{% endblock %}

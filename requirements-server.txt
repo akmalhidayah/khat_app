@@ -1,0 +1,20 @@
+Flask
+Flask-SQLAlchemy
+PyMySQL
+python-dotenv
+Werkzeug
+h5py>=3.11.0
+numpy
+pandas
+Pillow
+scikit-learn
+matplotlib
+seaborn
+
+# Windows users: run installer/install_windows.bat for automated setup.
+# See installer/requirements_windows.txt for the same list with notes.
+
+gunicorn
+tensorflow==2.20.0
+tf-keras==2.20.1
+opencv-python-headless

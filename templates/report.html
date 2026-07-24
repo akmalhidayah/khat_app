@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+{% block title %}Laporan Ringkasan Penelitian{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/report.css') }}">
+{% endblock %}
+{% block content %}
+<div class="report-page-wrap">
+
+  {# ── Web-only actions ── #}
+  <div class="report-actions no-print">
+    <div class="report-actions-text">
+      <h2 class="report-actions-title">Laporan Ringkasan Penelitian</h2>
+      <p class="report-actions-sub">Pratinjau laporan akademik siap cetak dan ekspor PDF.</p>
+    </div>
+    <div class="report-actions-btns">
+      <button type="button" class="btn btn-dark btn-sm" onclick="window.print()"><i class="bi bi-printer me-1"></i>Cetak Laporan</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()" title="Simpan sebagai PDF melalui dialog cetak browser"><i class="bi bi-file-earmark-pdf me-1"></i>Unduh PDF</button>
+      <a href="{{ url_for('report.export_summary_csv') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>Unduh CSV</a>
+      <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary btn-sm">Kembali ke Dashboard</a>
+    </div>
+  </div>
+
+  {# ── Printable report document ── #}
+  <article class="report-print-area" id="reportPrintArea">
+
+    {# 1. Cover / Header #}
+    <header class="report-cover report-section">
+      <div class="report-cover-brand">
+        <div class="report-cover-logo" aria-hidden="true"><i class="bi bi-journal-bookmark"></i></div>
+        <div class="report-cover-titles">
+          <p class="report-institution">ARABIC KHAT AI</p>
+          <h1 class="report-main-title">Laporan Ringkasan Penelitian</h1>
+          <p class="report-main-subtitle">Sistem Klasifikasi Kaligrafi Arab Berbasis Teachable Machine Image Model</p>
+          <p class="report-doc-type">Laporan Evaluasi Dataset, Model, dan Hasil Prediksi</p>
+        </div>
+      </div>
+      <div class="report-cover-meta">
+        <div><span>Tanggal Laporan</span><strong>{{ generated_at.strftime('%d %B %Y, %H:%M') if generated_at else '—' }}</strong></div>
+        <div><span>Dibuat Oleh</span><strong>{{ generated_by }}</strong></div>
+        <div><span>Model Aktif</span><strong>{{ arch_label }}</strong></div>
+      </div>
+      <div class="report-cover-line"></div>
+    </header>
+
+    {# 2. Report metadata #}
+    <section class="report-section">
+      <h2 class="report-section-title">Identitas Laporan</h2>
+      <table class="report-table report-meta-table">
+        <tbody>
+          <tr><th>Nama Sistem</th><td>Arabic Khat AI</td></tr>
+          <tr><th>Model Aktif</th><td>{{ arch_label }}</td></tr>
+          <tr><th>Runtime</th><td>{{ technical_info.model_runtime }}</td></tr>
+          <tr><th>Input Size</th><td>{{ technical_info.input_size }} px</td></tr>
+          <tr><th>Jumlah Kelas</th><td>{{ total_classes }}</td></tr>
+          <tr><th>Kelas</th><td>Naskhi, Diwani, Diwani Jali, Tsuluts</td></tr>
+          <tr><th>Tanggal Laporan</th><td>{{ generated_at.strftime('%Y-%m-%d %H:%M') if generated_at else '—' }}</td></tr>
+          <tr><th>Status Target Riset</th><td><span class="report-status-label status-{{ target_card.tone }}">{{ target_card.status_label }}</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    {# 3. Target status #}
+    <section class="report-section report-target-section tone-{{ target_card.tone }}">
+      <h2 class="report-section-title">Status Target Riset</h2>
+      <table class="report-table">
+        <thead>
+          <tr><th>Indikator</th><th class="text-end">Nilai</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Target Akurasi</td><td class="text-end"><strong>{{ target_card.target_pct }}%</strong></td></tr>
+          <tr><td>Akurasi Terakhir</td><td class="text-end"><strong>{{ target_card.accuracy_pct ~ '%' if target_card.accuracy_pct is not none else 'Belum tersedia' }}</strong></td></tr>
+          <tr><td>F1-Score</td><td class="text-end"><strong>{{ target_card.f1_pct ~ '%' if target_card.f1_pct is not none else 'Belum tersedia' }}</strong></td></tr>
+          <tr><td>Gap ke Target</td><td class="text-end"><strong>{{ target_card.gap_pct ~ '%' if target_card.gap_pct is not none else '—' }}</strong></td></tr>
+          <tr><td>Model Aktif</td><td class="text-end"><strong>{{ arch_label }}</strong></td></tr>
+          <tr><td>Status</td><td class="text-end"><span class="report-status-label status-{{ target_card.tone }}">{{ target_card.status_label }}</span></td></tr>
+        </tbody>
+      </table>
+      <p class="report-interpretation">{{ target_card.message }}</p>
+    </section>
+
+    {# 4. Executive summary #}
+    <section class="report-section">
+      <h2 class="report-section-title">Ringkasan Eksekutif</h2>
+      <p class="report-prose">{{ executive_summary }}</p>
+    </section>
+
+    {# 5. Dataset summary #}
+    <section class="report-section">
+      <h2 class="report-section-title">Ringkasan Dataset</h2>
+      {% if total_dataset > 0 %}
+      <table class="report-table">
+        <tbody>
+          <tr><th>Total Dataset</th><td class="text-end">{{ total_dataset }}</td></tr>
+          <tr><th>Total Kelas</th><td class="text-end">{{ total_classes }}</td></tr>
+          <tr><th>Gambar Diproses</th><td class="text-end">{{ processed_count }}</td></tr>
+          <tr><th>Data Training</th><td class="text-end">{{ train_count }}</td></tr>
+          <tr><th>Data Validation</th><td class="text-end">{{ validation_count }}</td></tr>
+          <tr><th>Data Testing</th><td class="text-end">{{ test_count }}</td></tr>
+          <tr><th>Status Dataset</th><td class="text-end">{{ dataset_status }}</td></tr>
+        </tbody>
+      </table>
+      {% else %}
+      <p class="report-muted">Dataset belum tersedia.</p>
+      {% endif %}
+    </section>
+
+    {# 8. Dataset distribution #}
+    <section class="report-section">
+      <h2 class="report-section-title">Distribusi Dataset per Kelas</h2>
+      {% if distribution_rows %}
+      <div class="table-responsive report-table-scroll">
+        <table class="report-table">
+          <thead>
+            <tr><th>Kelas</th><th class="text-end">Jumlah</th><th class="text-end">Persentase</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {% for row in distribution_rows %}
+            <tr>
+              <td>{{ row.label }}</td>
+              <td class="text-end">{{ row.count }}</td>
+              <td class="text-end">{{ row.percent }}%</td>
+              <td>{% if is_imbalanced and row.percent < 15 %}Minoritas{% elif is_imbalanced and row.percent > 30 %}Dominan{% else %}Normal{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="report-interpretation {% if is_imbalanced %}tone-warn{% endif %}">{{ dataset_balance_note }}</p>
+      {% if is_imbalanced %}
+      <p class="report-muted">Rekomendasi: class weights, augmentasi seimbang, dan penambahan data kelas minoritas.</p>
+      {% endif %}
+      {% else %}
+      <p class="report-muted">Belum tersedia.</p>
+      {% endif %}
+    </section>
+
+    {# 6. Model evaluation #}
+    <section class="report-section {% if per_class_rows %}page-break{% endif %}">
+      <h2 class="report-section-title">Evaluasi Model</h2>
+      {% if latest_eval and eval_rows %}
+      <p class="report-meta-line">Model: <strong>{{ arch_label }}</strong> · File: {{ model_filename }} · Dievaluasi: {{ eval_date }}</p>
+      <table class="report-table">
+        <thead>
+          <tr><th>Metrik</th><th class="text-end">Nilai</th><th>Interpretasi</th></tr>
+        </thead>
+        <tbody>
+          {% for row in eval_rows %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="text-end"><strong>{{ row.value_pct ~ '%' if row.value_pct is not none else 'Belum tersedia' }}</strong></td>
+            <td>{{ row.interpretation }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if training_metric_rows %}
+      <h3 class="report-subsection-title">Metrik Training Tambahan</h3>
+      <table class="report-table">
+        <tbody>
+          {% for row in training_metric_rows %}
+          <tr><th>{{ row.label }}</th><td class="text-end">{{ row.value }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      {% if per_class_rows %}
+      <h3 class="report-subsection-title">Performa per Kelas</h3>
+      <div class="table-responsive report-table-scroll">
+        <table class="report-table">
+          <thead>
+            <tr><th>Kelas</th><th class="text-end">Precision</th><th class="text-end">Recall</th><th class="text-end">F1-Score</th><th class="text-end">Support</th></tr>
+          </thead>
+          <tbody>
+            {% for row in per_class_rows %}
+            <tr>
+              <td>{{ row.class_name }}</td>
+              <td class="text-end">{{ (row.precision * 100)|round(2) if row.precision is not none else '—' }}%</td>
+              <td class="text-end">{{ (row.recall * 100)|round(2) if row.recall is not none else '—' }}%</td>
+              <td class="text-end">{{ (row.f1_score * 100)|round(2) if row.f1_score is not none else '—' }}%</td>
+              <td class="text-end">{{ row.support|int if row.support is not none else '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {% if confusion_data.available %}
+      <h3 class="report-subsection-title">Confusion Matrix</h3>
+      <div class="table-responsive report-table-scroll">
+        <table class="report-table report-cm-table">
+          <thead>
+            <tr>
+              <th>Aktual \ Prediksi</th>
+              {% for label in confusion_data.labels %}<th class="text-end">{{ label }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in confusion_data.rows %}
+            {% set row_i = loop.index0 %}
+            <tr>
+              <th>{{ row.true_label }}</th>
+              {% for val in row.cells %}
+              {% set col_i = loop.index0 %}
+              {% set is_diag = col_i == row_i %}
+              <td class="text-end {% if is_diag and val > 0 %}cm-diag{% elif is_diag %}cm-diag cm-zero{% elif val > 0 %}cm-off{% else %}cm-zero{% endif %}">{% if val > 0 %}{{ val }}{% else %}<span class="cm-empty" aria-hidden="true">—</span>{% endif %}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {% else %}
+      <p class="report-muted">Evaluasi model belum tersedia. Latih dan evaluasi model terlebih dahulu.</p>
+      <div class="no-print mt-2">
+        <a href="{{ url_for('evaluation.evaluation_page') }}" class="btn btn-outline-secondary btn-sm">Jalankan Evaluasi</a>
+      </div>
+      {% endif %}
+    </section>
+
+    {# 7. Prediction history #}
+    <section class="report-section">
+      <h2 class="report-section-title">Ringkasan Riwayat Prediksi</h2>
+      {% if total_history > 0 %}
+      <table class="report-table">
+        <tbody>
+          <tr><th>Total Prediksi</th><td class="text-end">{{ history_summary.total }}</td></tr>
+          <tr><th>Prediksi Valid</th><td class="text-end">{{ history_summary.valid_khat_count }}</td></tr>
+          <tr><th>Prediksi Mismatch</th><td class="text-end">{{ history_summary.mismatch_count }}</td></tr>
+          <tr><th>Input Non-Khat Ditolak</th><td class="text-end">{{ history_summary.rejected_count }}</td></tr>
+          <tr><th>Input Tidak Pasti</th><td class="text-end">{{ history_summary.uncertain_count }}</td></tr>
+          <tr><th>Prediksi Terakhir</th><td class="text-end">{{ history_summary.latest_prediction_date }}</td></tr>
+          <tr><th>Rata-rata Confidence (Valid)</th><td class="text-end">{{ (history_summary.avg_confidence_valid * 100)|round(2) ~ '%' if history_summary.avg_confidence_valid is not none else 'Belum tersedia' }}</td></tr>
+          <tr><th>Kelas Terbanyak Diprediksi</th><td class="text-end">{{ history_summary.most_predicted_display }}</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="report-subsection-title mt-4">Algorithm Calculation Summary</h3>
+      <p class="report-narrative">
+        The algorithm calculation feature explains the model inference process, confidence interpretation,
+        expected class validation, and final decision logic.
+      </p>
+      <table class="report-table">
+        <tbody>
+          <tr><th>Total Predictions</th><td class="text-end">{{ algorithm_summary.total_predictions }}</td></tr>
+          <tr><th>Accepted Predictions</th><td class="text-end">{{ algorithm_summary.accepted }}</td></tr>
+          <tr><th>Accepted with Caution</th><td class="text-end">{{ algorithm_summary.accepted_with_caution }}</td></tr>
+          <tr><th>Manual Review Recommended</th><td class="text-end">{{ algorithm_summary.manual_review_recommended }}</td></tr>
+          <tr><th>Manual Review Required</th><td class="text-end">{{ algorithm_summary.manual_review_required }}</td></tr>
+          <tr><th>Prediction Mismatch Count</th><td class="text-end">{{ algorithm_summary.prediction_mismatch_count }}</td></tr>
+          <tr><th>Average Confidence</th><td class="text-end">{{ algorithm_summary.avg_confidence ~ '%' if algorithm_summary.avg_confidence is not none else '—' }}</td></tr>
+          <tr><th>Average Top-2 Margin</th><td class="text-end">{{ algorithm_summary.avg_top2_margin ~ '%' if algorithm_summary.avg_top2_margin is not none else '—' }}</td></tr>
+          <tr><th>Unknown Expected Class Count</th><td class="text-end">{{ algorithm_summary.unknown_expected_class_count }}</td></tr>
+          <tr><th>Possible Unknown Class Count</th><td class="text-end">{{ algorithm_summary.possible_unknown_class_count }}</td></tr>
+          <tr><th>Rejected as Non-Khat</th><td class="text-end">{{ algorithm_summary.rejected_non_khat }}</td></tr>
+        </tbody>
+      </table>
+
+      {% if valid_history_rows %}
+      <h3 class="report-subsection-title">Prediksi Valid Terakhir</h3>
+      <div class="table-responsive report-table-scroll">
+        <table class="report-table report-history-table">
+          <thead>
+            <tr>
+              <th>No.</th>
+              <th class="report-thumb-col">Gambar</th>
+              <th>Kelas Prediksi</th>
+              <th class="text-end">Confidence</th>
+              <th>Reliability</th>
+              <th>Tanggal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in valid_history_rows[:5] %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td class="report-thumb-col"><img src="{{ row.image_url }}" class="report-thumb" alt="" onerror="this.style.display='none'"></td>
+              <td>{{ row.predicted_display }}</td>
+              <td class="text-end">{{ row.confidence_pct ~ '%' if row.confidence_pct is not none else '—' }}</td>
+              <td>{{ row.reliability }}</td>
+              <td>{{ row.created_at }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+      {% else %}
+      <p class="report-muted">Belum ada riwayat klasifikasi.</p>
+      {% endif %}
+    </section>
+
+    {# 9. Research insights #}
+    <section class="report-section">
+      <h2 class="report-section-title">Insight Penelitian</h2>
+      <ol class="report-insight-list">
+        {% for insight in research_insights %}
+        <li>{{ insight }}</li>
+        {% endfor %}
+      </ol>
+    </section>
+
+    {# 10. Recommendations #}
+    <section class="report-section">
+      <h2 class="report-section-title">Rekomendasi Perbaikan</h2>
+      <ol class="report-rec-list">
+        {% for rec in recommendations %}
+        <li>{{ rec }}</li>
+        {% endfor %}
+      </ol>
+    </section>
+
+    {# 11. Technical model info #}
+    <section class="report-section">
+      <h2 class="report-section-title">Informasi Teknis Model</h2>
+      <table class="report-table">
+        <tbody>
+          <tr><th>Model Source</th><td>{{ technical_info.model_source }}</td></tr>
+          <tr><th>Model Name</th><td>{{ technical_info.model_name }}</td></tr>
+          <tr><th>Runtime</th><td>{{ technical_info.model_runtime }}</td></tr>
+          <tr><th>Arsitektur</th><td>{{ technical_info.architecture }}</td></tr>
+          <tr><th>Model File</th><td><code class="report-code">{{ technical_info.model_file }}</code></td></tr>
+          <tr><th>Metadata File</th><td><code class="report-code">{{ technical_info.metadata_file }}</code></td></tr>
+          <tr><th>Weights File</th><td><code class="report-code">{{ technical_info.weights_file }}</code></td></tr>
+          <tr><th>Input Size</th><td>{{ technical_info.input_size }}</td></tr>
+          <tr><th>Labels</th><td>{{ technical_info.labels }}</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    {# Conclusion #}
+    <section class="report-section">
+      <h2 class="report-section-title">Kesimpulan</h2>
+      <p class="report-prose">{{ conclusion }}</p>
+    </section>
+
+    {# 12. Footer #}
+    <footer class="report-doc-footer report-section">
+      <p>Arabic Khat AI · Laporan Ringkasan Penelitian · Generated automatically by system</p>
+      <p class="report-footer-date">{{ generated_at.strftime('%Y-%m-%d %H:%M:%S') if generated_at else '' }}</p>
+    </footer>
+
+  </article>
+</div>
+{% endblock %}

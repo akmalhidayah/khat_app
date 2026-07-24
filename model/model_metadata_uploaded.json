@@ -1,0 +1,26 @@
+{
+  "architecture": "keras_h5",
+  "architecture_label": "Keras H5 (External Training)",
+  "model_architecture_key": "keras_h5",
+  "training_mode": "external",
+  "training_mode_label": "External TensorFlow Model",
+  "training_date": "2026-07-24 07:39 UTC",
+  "model_path": "D:\\model_treaning\\keras_model.h5",
+  "external_model_dir": "D:\\model_treaning",
+  "external_labels_path": "D:\\model_treaning\\labels.txt",
+  "class_indices": {
+    "diwani_jali": 0,
+    "tsuluts": 1,
+    "diwani": 2,
+    "naskhi": 3
+  },
+  "class_labels": [
+    "naskhi",
+    "diwani",
+    "diwani_jali",
+    "tsuluts"
+  ],
+  "preprocessing": "teachable_machine",
+  "input_size": 224,
+  "source": "external"
+}

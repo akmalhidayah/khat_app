@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Khat Tidak Dikenali{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/classification.css') }}">
+{% endblock %}
+{% block content %}
+<div class="result-page">
+
+{% set hero_class = 'border-danger' %}
+{% set hero_tone = 'text-danger' %}
+
+<div class="card result-hero mb-3 {{ hero_class }} detection-hero-{{ input_status }}">
+    <div class="card-body">
+        <h4 class="result-title {{ hero_tone }} mb-2">
+            <i class="bi {% if input_status == 'unrecognized' %}bi-slash-circle{% else %}bi-x-octagon{% endif %} me-2"></i>
+            {% if input_status == 'unrecognized' %}
+            {{ status_label or 'Khat Tidak Dikenali' }}
+            {% else %}
+            Citra Ditolak — Bukan Tulisan Arab
+            {% endif %}
+        </h4>
+        <p class="mb-0">
+            {% if result.message %}
+            {{ result.message }}
+            {% elif result.rejection_reason %}
+            {{ result.rejection_reason }}
+            {% elif input_status == 'unrecognized' %}
+            Tulisan Arab terdeteksi, tetapi jenis khat tidak termasuk dalam dataset pelatihan.
+            {% else %}
+            Gambar bukan merupakan tulisan Arab.
+            {% endif %}
+        </p>
+        {% if input_status == 'unrecognized' %}
+        <p class="small text-muted mt-2 mb-0">
+            Sistem hanya mengklasifikasikan Khat Naskhi, Khat Tsuluts, Khat Diwani, dan Khat Diwani Jali
+            {% if trained_class_list %}
+            ({{ trained_class_list }}).
+            {% else %}
+            .
+            {% endif %}
+            Gaya di luar dataset (misalnya Kufi, Riq'ah, Farisi) atau kemiripan/keyakinan di bawah ambang akan ditolak.
+        </p>
+        {% else %}
+        <p class="small text-muted mt-2 mb-0">
+            Sistem hanya menerima tulisan Arab. Foto manusia, hewan, tumbuhan, pemandangan, benda,
+            logo, huruf Latin, angka, simbol, QR/barcode, atau aksara non-Arab akan ditolak.
+        </p>
+        {% endif %}
+        {% if result.rejection_reason and result.rejection_reason != result.message %}
+        <div class="alert alert-light border mt-3 mb-0 py-2 px-3 small" role="status">
+            <strong class="d-block mb-1">Alasan:</strong>
+            {{ result.rejection_reason }}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-lg-5">
+        <div class="card classify-card h-100">
+            <div class="card-header">Citra Diunggah</div>
+            <div class="card-body text-center">
+                {% if image_url %}
+                <img src="{{ image_url }}" class="img-fluid rounded shadow-sm" alt="Citra yang diunggah">
+                {% else %}
+                <p class="text-muted">Pratinjau citra tidak tersedia.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        {% if input_status != 'unrecognized' %}
+        {% include "includes/detection_stage.html" %}
+        {% else %}
+        <div class="card classify-card h-100">
+            <div class="card-header">Informasi Validasi Kelas</div>
+            <div class="card-body">
+                <p class="mb-2">
+                    Sistem hanya mengenali khat yang sesuai dengan kelas pada dataset training.
+                    Setelah citra lolos deteksi khat, model memilih kelas terbaik di antara
+                    <strong>Naskhi, Diwani, Diwani Jali, Tsuluts</strong>.
+                    Gaya di luar dataset—misalnya Kufi atau Riqah—atau foto/abjad Latin tetap ditolak.
+                </p>
+                {% if trained_class_list %}
+                <p class="small mb-2"><strong>Kelas yang didukung:</strong> {{ trained_class_list }}</p>
+                {% endif %}
+                <ul class="small text-muted mb-0">
+                    <li>Setelah tulisan Arab terkonfirmasi, model memilih kelas terbaik di antara 4 kelas dataset</li>
+                    <li>Ambang keyakinan lebih longgar untuk scan/foto latihan yang masih mirip Naskhi/Diwani/Diwani Jali/Tsuluts</li>
+                    <li>Foto manusia, hewan, tumbuhan, lautan, dan huruf abjad Latin tetap ditolak di Stage 1</li>
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card classify-card mb-3 stage2-hidden-card">
+    <div class="card-header text-muted"><i class="bi bi-lock me-1"></i>Tahap 2 — Klasifikasi Jenis Khat</div>
+    <div class="card-body">
+        <p class="mb-1"><strong>Hasil Klasifikasi:</strong> <span class="text-muted">Tidak ada label kelas</span></p>
+        <p class="mb-0 small text-muted">
+            {% if input_status == 'uncertain' %}
+            Skor probabilitas disembunyikan hingga Anda melanjutkan klasifikasi atau mengunggah citra yang lebih jelas.
+            {% elif input_status == 'unrecognized' %}
+            Skor probabilitas tidak ditampilkan karena khat tidak dikenali sebagai kelas pada dataset training.
+            {% else %}
+            Skor probabilitas tidak ditampilkan karena citra tidak lolos tahap deteksi khat.
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<div class="d-flex flex-wrap gap-2">
+    <a href="{{ url_for('classification.classify_image') }}" class="btn btn-emerald"><i class="bi bi-upload me-1"></i>Unggah Citra Lain</a>
+    {% if input_status == 'uncertain' %}
+    <form method="post" action="{{ url_for('classification.continue_classification', item_id=result.id) }}" class="d-inline">
+        <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-right-circle me-1"></i>Lanjutkan Klasifikasi</button>
+    </form>
+    {% endif %}
+    <a href="{{ url_for('classification.history') }}" class="btn btn-outline-dark"><i class="bi bi-clock-history me-1"></i>Riwayat</a>
+    <a href="{{ url_for('dashboard.dashboard') }}" class="btn btn-outline-secondary"><i class="bi bi-grid me-1"></i>Dashboard</a>
+</div>
+
+</div>
+{% endblock %}

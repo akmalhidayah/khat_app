@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Login — Arabic Khat Classification{% endblock %}
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+{% endblock %}
+{% block content %}
+<div class="login-page{% if decorative_image_url %} has-page-bg{% endif %}">
+  {% if decorative_image_url %}
+  <div class="login-page-bg" aria-hidden="true">
+    <img class="login-page-bg-photo" src="{{ decorative_image_url }}" alt="" decoding="async" fetchpriority="high">
+    <div class="login-page-bg-wash"></div>
+  </div>
+  {% endif %}
+  <aside class="login-hero" aria-label="Identitas sistem Arabic Khat AI">
+    <div class="hero-bg{% if decorative_image_url %} has-calligraphy{% endif %}" aria-hidden="true">
+      <svg class="hero-geo-svg" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="islamicGeo" width="48" height="48" patternUnits="userSpaceOnUse">
+            <path d="M24 0 L48 24 L24 48 L0 24 Z" fill="none" stroke="rgba(201,169,98,0.09)" stroke-width="0.75"/>
+            <circle cx="24" cy="24" r="6" fill="none" stroke="rgba(34,211,238,0.06)" stroke-width="0.5"/>
+            <path d="M24 8 L32 24 L24 40 L16 24 Z" fill="none" stroke="rgba(201,169,98,0.05)" stroke-width="0.5"/>
+          </pattern>
+          <radialGradient id="heroGlowTeal" cx="30%" cy="40%" r="55%">
+            <stop offset="0%" stop-color="rgba(20,184,166,0.22)"/>
+            <stop offset="100%" stop-color="rgba(20,184,166,0)"/>
+          </radialGradient>
+          <radialGradient id="heroGlowGold" cx="75%" cy="75%" r="45%">
+            <stop offset="0%" stop-color="rgba(201,169,98,0.14)"/>
+            <stop offset="100%" stop-color="rgba(201,169,98,0)"/>
+          </radialGradient>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#islamicGeo)"/>
+        <rect width="100%" height="100%" fill="url(#heroGlowTeal)"/>
+        <rect width="100%" height="100%" fill="url(#heroGlowGold)"/>
+      </svg>
+      <div class="hero-vignette"></div>
+    </div>
+
+    <div class="hero-content">
+      <div class="hero-brand">
+        <div class="hero-badge">
+          <i class="bi bi-stars" aria-hidden="true"></i>
+          <span>Research &amp; Classification Portal</span>
+        </div>
+        <h1 class="hero-title">Arabic Khat AI</h1>
+        <p class="hero-tagline">Sistem inteligen untuk analisis dan klasifikasi gaya kaligrafi Arab — menggabungkan warisan budaya dengan teknologi deep learning modern.</p>
+
+        <ul class="hero-pills" aria-label="Kemampuan sistem">
+          <li><i class="bi bi-brush" aria-hidden="true"></i> 4 Gaya Khat</li>
+          <li><i class="bi bi-cpu" aria-hidden="true"></i> CNN / VGG16</li>
+          <li><i class="bi bi-lightning-charge" aria-hidden="true"></i> Real-time</li>
+          <li><i class="bi bi-mortarboard" aria-hidden="true"></i> Akademik</li>
+        </ul>
+      </div>
+
+      <div class="hero-artwork login-hero-image">
+        <div class="hero-art-frame">
+          <div class="hero-art-corner hero-art-corner-tl" aria-hidden="true"></div>
+          <div class="hero-art-corner hero-art-corner-tr" aria-hidden="true"></div>
+          <div class="hero-art-corner hero-art-corner-bl" aria-hidden="true"></div>
+          <div class="hero-art-corner hero-art-corner-br" aria-hidden="true"></div>
+          {% if decorative_image_url %}
+          <img src="{{ decorative_image_url }}" alt="Contoh kaligrafi Arab untuk klasifikasi" class="hero-art-img" loading="eager">
+          {% else %}
+          <div class="hero-art-fallback" lang="ar" aria-hidden="true">خط</div>
+          {% endif %}
+          <div class="hero-art-shimmer" aria-hidden="true"></div>
+        </div>
+        <p class="hero-art-caption">
+          <i class="bi bi-diagram-3" aria-hidden="true"></i>
+          Analisis gaya: Naskhi · Diwani · Diwani Jali · Tsuluts
+        </p>
+      </div>
+    </div>
+
+    <footer class="hero-footer" aria-hidden="true">
+      <span>Arabic Calligraphy Classification System</span>
+      <span class="hero-footer-dot">·</span>
+      <span>CNN Transfer Learning</span>
+    </footer>
+  </aside>
+
+  <section class="login-panel" aria-label="Form login">
+    <div class="login-panel-bg" aria-hidden="true"></div>
+
+    <div class="login-card">
+      <header class="login-card-header">
+        <div class="login-secure-icon" aria-hidden="true">
+          <i class="bi bi-shield-lock-fill"></i>
+        </div>
+        <p class="login-eyebrow">Selamat Datang</p>
+        <h2 class="login-heading">Arabic Khat AI</h2>
+        <p class="login-subtext">
+          Masuk untuk mengakses sistem klasifikasi gaya kaligrafi Arab berbasis
+          <strong>CNN &amp; Transfer Learning</strong> (VGG16 / Teachable Machine).
+        </p>
+      </header>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="login-alerts" role="status" aria-live="polite">
+        {% for category, message in messages %}
+        <div class="login-alert login-alert-{{ category }}" role="alert">
+          <span class="login-alert-icon" aria-hidden="true">
+            <i class="bi bi-{{ 'exclamation-circle-fill' if category == 'danger' else 'check-circle-fill' if category == 'success' else 'info-circle-fill' if category == 'info' else 'exclamation-triangle-fill' }}"></i>
+          </span>
+          <span class="login-alert-text">{{ message }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+
+      <form method="post" class="login-form" id="loginForm" novalidate>
+        <div class="login-field">
+          <label class="login-label" for="username">Username atau Email</label>
+          <div class="input-wrap">
+            <span class="input-icon" aria-hidden="true"><i class="bi bi-person"></i></span>
+            <input class="login-input" type="text" id="username" name="username" placeholder="Masukkan username" autocomplete="username" required aria-required="true">
+          </div>
+          <span class="login-field-error" id="usernameError" role="alert"></span>
+        </div>
+
+        <div class="login-field">
+          <label class="login-label" for="password">Password</label>
+          <div class="input-wrap has-toggle">
+            <span class="input-icon" aria-hidden="true"><i class="bi bi-lock"></i></span>
+            <input class="login-input" type="password" id="password" name="password" placeholder="Masukkan password" autocomplete="current-password" required aria-required="true">
+            <button type="button" class="password-toggle" id="passwordToggle" aria-label="Tampilkan password" aria-pressed="false">
+              <i class="bi bi-eye" aria-hidden="true"></i>
+            </button>
+          </div>
+          <span class="login-field-error" id="passwordError" role="alert"></span>
+        </div>
+
+        <div class="login-options">
+          <label class="login-remember">
+            <input type="checkbox" id="rememberMe" name="remember_me" value="1">
+            <span class="login-remember-box" aria-hidden="true"></span>
+            <span>Ingat saya</span>
+          </label>
+          <button type="button" class="login-forgot" id="forgotPasswordBtn">Lupa password?</button>
+        </div>
+
+        <div class="login-forgot-note d-none" id="forgotPasswordNote" role="status">
+          <i class="bi bi-envelope" aria-hidden="true"></i>
+          <span>Hubungi administrator sistem untuk reset password akun penelitian Anda.</span>
+        </div>
+
+        <button class="login-btn" type="submit" id="loginSubmitBtn">
+          <span class="login-btn-icon" aria-hidden="true"><i class="bi bi-box-arrow-in-right"></i></span>
+          <span class="login-btn-text">Masuk ke Sistem</span>
+          <span class="login-btn-loading-text d-none" aria-hidden="true">Memproses login…</span>
+          <span class="login-btn-spinner d-none" aria-hidden="true"></span>
+        </button>
+      </form>
+
+      <p class="login-switch">
+        Belum punya akun?
+        <a href="{{ url_for('auth.register') }}" class="login-switch-link">Daftar akun baru</a>
+      </p>
+
+      <div class="login-demo">
+        <div class="login-demo-icon" aria-hidden="true"><i class="bi bi-key"></i></div>
+        <div class="login-demo-body">
+          <span class="login-demo-label">Akun demo penelitian</span>
+          <span class="login-demo-creds">Username <code>admin</code> · Password <code>admin123</code></span>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+<script src="{{ url_for('static', filename='js/login.js') }}"></script>
+{% endblock %}

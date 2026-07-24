@@ -1,0 +1,463 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_container_class %}page-container-compact dashboard-page-container{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+{% endblock %}
+{% block content %}
+{% set class_labels_id = {'naskhi': 'Naskhi', 'diwani': 'Diwani', 'diwani_jali': 'Diwani Jali', 'tsuluts': 'Tsuluts'} %}
+{% set mode_label = training_mode or 'Unknown' %}
+{% set is_demo = 'demo' in (mode_label|lower) or 'fast' in (mode_label|lower) %}
+{% set acc_pct = (test_accuracy * 100)|round(1) if test_accuracy is not none else none %}
+{% set target_pct = (accuracy_target * 100)|round(0)|int %}
+{% set gap_pct = dashboard_insights.accuracy_gap_pct %}
+
+<div class="dash-v2">
+
+  {# ── Hero / system overview ── #}
+  <section class="dash-v2-hero" aria-label="Dashboard summary">
+    <div class="dash-v2-hero-content">
+      <p class="dash-v2-eyebrow">Arabic Khat AI · Sistem Klasifikasi Kaligrafi</p>
+      <h1 class="dash-v2-title">Dashboard</h1>
+      <p class="dash-v2-subtitle">Ringkasan status model, dataset, dan aktivitas klasifikasi terbaru.</p>
+    </div>
+    <div class="dash-v2-hero-status">
+      <div class="dash-v2-status-chip {{ 'mode-research' if not is_demo else 'mode-demo' }}">
+        <i class="bi bi-cpu" aria-hidden="true"></i>
+        <div>
+          <span class="chip-label">Mode Training</span>
+          <strong>{{ 'Mode Riset' if not is_demo else 'Mode Demo' }}</strong>
+        </div>
+      </div>
+      <div class="dash-v2-status-chip {{ 'acc-ok' if target_test.achieved else 'acc-warn' if acc_pct is not none else 'acc-muted' }}">
+        <i class="bi bi-bullseye" aria-hidden="true"></i>
+        <div>
+          <span class="chip-label">Akurasi Uji</span>
+          <strong>{{ acc_pct ~ '%' if acc_pct is not none else '—' }}</strong>
+        </div>
+      </div>
+      <div class="dash-v2-status-chip {{ 'det-ok' if detector_available else 'det-warn' }}">
+        <i class="bi bi-shield-check" aria-hidden="true"></i>
+        <div>
+          <span class="chip-label">Khat Detector</span>
+          <strong>{{ 'Aktif' if detector_available else 'Nonaktif' }}</strong>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {% if detector_eval.get('too_strict_warning') %}
+  <div class="dash-v2-alert" role="alert"><i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>{{ detector_eval.too_strict_warning }}</div>
+  {% endif %}
+
+  {% if acc_pct is not none and not target_test.achieved %}
+  <div class="dash-v2-alert dash-v2-alert-info" role="status">
+    <i class="bi bi-info-circle me-1" aria-hidden="true"></i>
+    Akurasi uji masih di bawah target {{ target_pct }}%. Disarankan menambah data dan melakukan evaluasi ulang.
+  </div>
+  {% endif %}
+
+  {# ── Key metrics ── #}
+  <section class="dash-v2-section" aria-labelledby="dashMetricsTitle">
+    <div class="dash-v2-section-head">
+      <h2 class="dash-v2-section-title" id="dashMetricsTitle">Metrik Utama</h2>
+      <p class="dash-v2-section-desc">Indikator kinerja dan volume data sistem</p>
+    </div>
+    <div class="dash-v2-kpi-primary">
+      <div class="dash-v2-kpi dash-v2-kpi-featured accent-teal">
+        <div class="dash-v2-kpi-top">
+          <span class="dash-v2-kpi-icon" aria-hidden="true"><i class="bi bi-graph-up-arrow"></i></span>
+          {% if acc_pct is not none %}
+          <span class="dash-v2-kpi-badge {{ 'ok' if target_test.achieved else 'warn' }}">
+            {% if target_test.achieved %}
+            Target tercapai
+            {% elif gap_pct is not none and gap_pct > 0 %}
+            Perlu peningkatan {{ gap_pct }}%
+            {% else %}
+            Target {{ target_pct }}%
+            {% endif %}
+          </span>
+          {% endif %}
+        </div>
+        <div class="dash-v2-kpi-value">{{ acc_pct ~ '%' if acc_pct is not none else '—' }}</div>
+        <div class="dash-v2-kpi-label">Akurasi Uji</div>
+        <div class="dash-v2-kpi-desc">{{ 'Holdout test set · evaluasi model' if acc_pct is not none else 'Jalankan evaluasi model' }}</div>
+      </div>
+
+      <div class="dash-v2-kpi dash-v2-kpi-featured accent-blue">
+        <div class="dash-v2-kpi-top">
+          <span class="dash-v2-kpi-icon" aria-hidden="true"><i class="bi bi-images"></i></span>
+        </div>
+        <div class="dash-v2-kpi-value">{{ total_dataset }}</div>
+        <div class="dash-v2-kpi-label">Total Dataset</div>
+        <div class="dash-v2-kpi-desc">Gambar kaligrafi terunggah di sistem</div>
+      </div>
+
+      <div class="dash-v2-kpi dash-v2-kpi-featured accent-indigo">
+        <div class="dash-v2-kpi-top">
+          <span class="dash-v2-kpi-icon" aria-hidden="true"><i class="bi bi-clock-history"></i></span>
+        </div>
+        <div class="dash-v2-kpi-value">{{ total_history }}</div>
+        <div class="dash-v2-kpi-label">Total Prediksi</div>
+        <div class="dash-v2-kpi-desc">Riwayat klasifikasi tersimpan</div>
+      </div>
+    </div>
+
+    <div class="dash-v2-kpi-secondary">
+      <div class="dash-v2-kpi dash-v2-kpi-compact">
+        <span class="dash-v2-kpi-icon sm" aria-hidden="true"><i class="bi bi-grid-3x3-gap"></i></span>
+        <div class="dash-v2-kpi-compact-body">
+          <div class="dash-v2-kpi-value sm">{{ total_classes }}</div>
+          <div class="dash-v2-kpi-label">Total Kelas</div>
+          <div class="dash-v2-kpi-desc">Naskhi · Diwani · Diwani Jali · Tsuluts</div>
+        </div>
+      </div>
+      <div class="dash-v2-kpi dash-v2-kpi-compact">
+        <span class="dash-v2-kpi-icon sm success" aria-hidden="true"><i class="bi bi-check-circle"></i></span>
+        <div class="dash-v2-kpi-compact-body">
+          <div class="dash-v2-kpi-value sm">{{ valid_khat_predictions or 0 }}</div>
+          <div class="dash-v2-kpi-label">Prediksi Valid</div>
+          <div class="dash-v2-kpi-desc">Input khat berhasil diklasifikasi</div>
+        </div>
+      </div>
+      <div class="dash-v2-kpi dash-v2-kpi-compact">
+        <span class="dash-v2-kpi-icon sm danger" aria-hidden="true"><i class="bi bi-x-circle"></i></span>
+        <div class="dash-v2-kpi-compact-body">
+          <div class="dash-v2-kpi-value sm">{{ rejected_non_khat or 0 }}</div>
+          <div class="dash-v2-kpi-label">Ditolak Non-Khat</div>
+          <div class="dash-v2-kpi-desc">Bukan kaligrafi Arab</div>
+        </div>
+      </div>
+      <div class="dash-v2-kpi dash-v2-kpi-compact">
+        <span class="dash-v2-kpi-icon sm warn" aria-hidden="true"><i class="bi bi-question-circle"></i></span>
+        <div class="dash-v2-kpi-compact-body">
+          <div class="dash-v2-kpi-value sm">{{ uncertain_inputs or 0 }}</div>
+          <div class="dash-v2-kpi-label">Input Tidak Pasti</div>
+          <div class="dash-v2-kpi-desc">Zona ambigu detector</div>
+        </div>
+      </div>
+      <div class="dash-v2-kpi dash-v2-kpi-compact dash-v2-kpi-detector">
+        <span class="dash-v2-kpi-icon sm {{ 'success' if detector_available else 'warn' }}" aria-hidden="true"><i class="bi bi-shield-check"></i></span>
+        <div class="dash-v2-kpi-compact-body">
+          <div class="dash-v2-kpi-value sm">{{ 'Aktif' if detector_available else 'Off' }}</div>
+          <div class="dash-v2-kpi-label">Status Detector</div>
+          <div class="dash-v2-kpi-desc">
+            {% if detector_available %}
+            Accept ≥{{ (khat_thresholds.accept * 100)|round(0) }}% · Reject &lt;{{ (khat_thresholds.reject * 100)|round(0) }}%
+            {% else %}
+            Belum dilatih atau tidak tersedia
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── System insight card ── #}
+  <section class="dash-v2-insight-card" aria-label="Insight sistem">
+    <div class="dash-v2-insight-head">
+      <span class="dash-v2-card-icon" aria-hidden="true"><i class="bi bi-lightbulb"></i></span>
+      <div>
+        <strong>Insight Sistem</strong>
+        <small>Monitoring penelitian dan rekomendasi</small>
+      </div>
+    </div>
+    <div class="dash-v2-insight-grid">
+      <div class="dash-v2-insight-item tone-{{ dashboard_insights.accuracy_tone }}">
+        <span>Status Akurasi</span>
+        <strong>{{ dashboard_insights.accuracy_status }}{% if dashboard_insights.accuracy_pct is not none %} · {{ dashboard_insights.accuracy_pct }}%{% endif %}</strong>
+      </div>
+      <div class="dash-v2-insight-item tone-{{ dashboard_insights.dataset_tone }}">
+        <span>Status Dataset</span>
+        <strong>{{ dashboard_insights.dataset_status }}</strong>
+      </div>
+      <div class="dash-v2-insight-item tone-{{ dashboard_insights.detector_tone }}">
+        <span>Status Detector</span>
+        <strong>{{ dashboard_insights.detector_status }}</strong>
+      </div>
+      <div class="dash-v2-insight-item tone-info">
+        <span>Rekomendasi</span>
+        <strong>{{ dashboard_insights.primary_recommendation }}</strong>
+      </div>
+    </div>
+  </section>
+
+  {# ── Dataset distribution + latest result ── #}
+  <section class="dash-v2-section dash-v2-insights-grid">
+    <div class="dash-v2-card dash-v2-card-elevated">
+      <div class="dash-v2-card-head">
+        <div class="dash-v2-card-head-text">
+          <span class="dash-v2-card-icon" aria-hidden="true"><i class="bi bi-pie-chart"></i></span>
+          <div>
+            <strong>Distribusi Dataset</strong>
+            <small>Per kelas kaligrafi</small>
+          </div>
+        </div>
+        <a href="{{ url_for('dataset.list_dataset') }}" class="dash-v2-link">Kelola Dataset <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+      </div>
+      <div class="dash-v2-card-body">
+        {% set total_distribution = dataset_insights.total %}
+        {% if total_distribution > 0 %}
+          {% if dataset_insights.is_imbalanced %}
+          <div class="dash-v2-balance-alert" role="alert">
+            <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+            <div>
+              <p class="mb-1">{{ dataset_insights.warning_message }}</p>
+              {% if dataset_insights.recommendation %}
+              <p class="mb-0 dash-v2-balance-rec">{{ dataset_insights.recommendation }}</p>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+          {% for cls, count in distribution.items() %}
+          {% set pct = dataset_insights.percentages.get(cls, 0) %}
+          <div class="dash-v2-dist-row">
+            <div class="dash-v2-dist-label">
+              <span class="dash-v2-class-dot {{ cls }}" aria-hidden="true"></span>
+              <span>{{ class_labels_id.get(cls, cls.replace('_', ' ').title()) }}</span>
+            </div>
+            <div class="dash-v2-dist-bar-wrap" role="progressbar" aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100">
+              <div class="dash-v2-dist-bar {{ cls }}" style="width: {{ pct }}%"></div>
+            </div>
+            <div class="dash-v2-dist-meta">
+              <strong>{{ count }}</strong>
+              <span>{{ pct }}%</span>
+            </div>
+          </div>
+          {% endfor %}
+          <p class="dash-v2-dist-footnote mb-0">{{ total_distribution }} gambar · {{ dataset_insights.active_classes }} kelas aktif</p>
+        {% else %}
+          <div class="dash-v2-empty">
+            <i class="bi bi-inbox" aria-hidden="true"></i>
+            <p>Belum ada dataset. Unggah gambar kaligrafi terlebih dahulu.</p>
+            <a href="{{ url_for('dataset.upload_dataset') }}" class="dash-v2-btn dash-v2-btn-primary btn-sm">Unggah Dataset</a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="dash-v2-card dash-v2-card-elevated dash-v2-latest-card">
+      <div class="dash-v2-card-head">
+        <div class="dash-v2-card-head-text">
+          <span class="dash-v2-card-icon highlight" aria-hidden="true"><i class="bi bi-star"></i></span>
+          <div>
+            <strong>Hasil Terbaru</strong>
+            <small>Prediksi klasifikasi terakhir</small>
+          </div>
+        </div>
+      </div>
+      <div class="dash-v2-card-body">
+        {% if latest_result %}
+        {% set latest_conf = (latest_result.confidence * 100)|round(1) if latest_result.confidence is not none else none %}
+        <div class="dash-v2-latest">
+          <div class="dash-v2-latest-visual">
+            <img src="{{ url_for('static', filename=latest_result.image_path.replace('static/', '')) }}" alt="Hasil terbaru" class="dash-v2-latest-thumb">
+          </div>
+          <div class="dash-v2-latest-info">
+            <div class="dash-v2-latest-badges">
+              {% if latest_result.predicted_class %}
+              <span class="dash-v2-class-badge lg {{ latest_result.predicted_class }}">{{ class_labels_id.get(latest_result.predicted_class, latest_result.predicted_class.replace('_', ' ').title()) }}</span>
+              {% elif latest_result.input_status == 'non_khat' %}
+              <span class="dash-v2-status-badge reject lg">Non-Khat</span>
+              {% elif latest_result.input_status == 'unrecognized' %}
+              <span class="dash-v2-status-badge reject lg">Khat Tidak Dikenali</span>
+              {% elif latest_result.input_status == 'uncertain' %}
+              <span class="dash-v2-status-badge uncertain lg">Tidak Pasti</span>
+              {% endif %}
+              {% if latest_conf is not none and latest_conf >= 99 %}
+              <span class="dash-v2-strength-badge">Strong Prediction</span>
+              {% endif %}
+              {% if latest_result.validation_status %}
+              <span class="dash-v2-validation-badge {{ 'match' if latest_result.validation_status == 'Prediction Match' else 'mismatch' if latest_result.validation_status == 'Prediction Mismatch' else 'neutral' }}">{{ latest_result.validation_status }}</span>
+              {% endif %}
+            </div>
+            <div class="dash-v2-latest-conf">
+              <span class="conf-value">{{ latest_conf if latest_conf is not none else '—' }}{% if latest_conf is not none %}%{% endif %}</span>
+              <span class="conf-label">{{ 'Confidence' if latest_result.predicted_class else 'Probabilitas Khat' }}</span>
+            </div>
+            <div class="dash-v2-latest-meta">
+              <span><i class="bi bi-clock" aria-hidden="true"></i>{{ latest_result.created_at.strftime('%d %b %Y, %H:%M') if latest_result.created_at else '—' }}</span>
+              {% if latest_result.final_decision %}
+              <span><i class="bi bi-patch-check" aria-hidden="true"></i>{{ latest_result.final_decision }}</span>
+              {% endif %}
+            </div>
+            <a href="{{ url_for('classification.history') }}" class="dash-v2-btn dash-v2-btn-outline dash-v2-btn-block">
+              <i class="bi bi-list-ul me-1" aria-hidden="true"></i>Lihat Riwayat
+            </a>
+          </div>
+        </div>
+        {% else %}
+        <div class="dash-v2-empty compact">
+          <i class="bi bi-search" aria-hidden="true"></i>
+          <p>Belum ada prediksi. Mulai dengan mengklasifikasi gambar.</p>
+          <a href="{{ url_for('classification.classify_image') }}" class="dash-v2-btn dash-v2-btn-primary btn-sm">Klasifikasi Gambar</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {# ── Activity + quick actions ── #}
+  <section class="dash-v2-section dash-v2-bottom-grid">
+    <div class="dash-v2-card dash-v2-card-elevated dash-v2-activity-card">
+      <div class="dash-v2-card-head">
+        <div class="dash-v2-card-head-text">
+          <span class="dash-v2-card-icon" aria-hidden="true"><i class="bi bi-activity"></i></span>
+          <div>
+            <strong>Aktivitas Terbaru</strong>
+            <small>Klasifikasi terakhir</small>
+          </div>
+        </div>
+        <a href="{{ url_for('classification.history') }}" class="dash-v2-link dash-v2-link-strong">Lihat Semua <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+      </div>
+      <div class="dash-v2-card-body dash-v2-activity-body">
+        {% if recent_classifications %}
+        <div class="dash-v2-activity-list">
+          {% for row in recent_classifications %}
+          <div class="dash-v2-activity-row">
+            <img src="{{ url_for('static', filename=row.image_path.replace('static/', '')) }}" alt="" class="dash-v2-activity-thumb">
+            <div class="dash-v2-activity-main">
+              {% if row.predicted_class %}
+              <span class="dash-v2-class-badge sm {{ row.predicted_class }}">{{ class_labels_id.get(row.predicted_class, row.predicted_class.replace('_', ' ').title()) }}</span>
+              {% elif row.input_status == 'non_khat' %}
+              <span class="dash-v2-status-badge reject sm">Non-Khat</span>
+              {% elif row.input_status == 'unrecognized' %}
+              <span class="dash-v2-status-badge reject sm">Khat Tidak Dikenali</span>
+              {% elif row.input_status == 'uncertain' %}
+              <span class="dash-v2-status-badge uncertain sm">Tidak Pasti</span>
+              {% else %}
+              <span class="text-muted small">—</span>
+              {% endif %}
+              <span class="dash-v2-activity-conf">{{ (row.confidence * 100)|round(1) if row.confidence is not none else '—' }}{% if row.confidence is not none %}%{% endif %}</span>
+              {% if row.validation_status %}
+              <span class="dash-v2-validation-badge sm {{ 'match' if row.validation_status == 'Prediction Match' else 'mismatch' if row.validation_status == 'Prediction Mismatch' else 'neutral' }}">{{ row.validation_status }}</span>
+              {% endif %}
+            </div>
+            <time class="dash-v2-activity-time">{{ row.created_at.strftime('%d/%m · %H:%M') if row.created_at else '—' }}</time>
+            <a href="{{ url_for('classification.history') }}" class="dash-v2-activity-action" aria-label="Lihat detail riwayat" title="Lihat detail"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="dash-v2-empty compact">
+          <i class="bi bi-inbox" aria-hidden="true"></i>
+          <p class="mb-0">Belum ada aktivitas klasifikasi.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="dash-v2-quick-panel">
+      <div class="dash-v2-section-head compact">
+        <h2 class="dash-v2-section-title">Aksi Cepat</h2>
+        <p class="dash-v2-section-desc">Navigasi ke fitur utama sistem</p>
+      </div>
+      <div class="dash-v2-actions">
+        <a href="{{ url_for('classification.classify_image') }}" class="dash-v2-action primary">
+          <span class="dash-v2-action-icon" aria-hidden="true"><i class="bi bi-easel2"></i></span>
+          <span class="dash-v2-action-text">
+            <strong>Klasifikasi Gambar</strong>
+            <small>Prediksi kelas khat</small>
+          </span>
+          <i class="bi bi-arrow-right dash-v2-action-arrow" aria-hidden="true"></i>
+        </a>
+        <a href="{{ url_for('dataset.upload_dataset') }}" class="dash-v2-action">
+          <span class="dash-v2-action-icon" aria-hidden="true"><i class="bi bi-upload"></i></span>
+          <span class="dash-v2-action-text">
+            <strong>Unggah Dataset</strong>
+            <small>Tambah data training</small>
+          </span>
+          <i class="bi bi-arrow-right dash-v2-action-arrow" aria-hidden="true"></i>
+        </a>
+        <a href="{{ url_for('model_management.model_management_page') }}" class="dash-v2-action">
+          <span class="dash-v2-action-icon" aria-hidden="true"><i class="bi bi-cpu"></i></span>
+          <span class="dash-v2-action-text">
+            <strong>Manajemen Model</strong>
+            <small>Latih ulang model</small>
+          </span>
+          <i class="bi bi-arrow-right dash-v2-action-arrow" aria-hidden="true"></i>
+        </a>
+        <a href="{{ url_for('evaluation.evaluation_page') }}" class="dash-v2-action">
+          <span class="dash-v2-action-icon" aria-hidden="true"><i class="bi bi-graph-up"></i></span>
+          <span class="dash-v2-action-text">
+            <strong>Evaluasi Model</strong>
+            <small>Metrik &amp; confusion matrix</small>
+          </span>
+          <i class="bi bi-arrow-right dash-v2-action-arrow" aria-hidden="true"></i>
+        </a>
+        <a href="{{ url_for('report.report_page') }}" class="dash-v2-action">
+          <span class="dash-v2-action-icon" aria-hidden="true"><i class="bi bi-file-earmark-text"></i></span>
+          <span class="dash-v2-action-text">
+            <strong>Laporan Riset</strong>
+            <small>Export hasil penelitian</small>
+          </span>
+          <i class="bi bi-arrow-right dash-v2-action-arrow" aria-hidden="true"></i>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  {# ── Collapsible: technical details (collapsed by default) ── #}
+  <details class="dash-v2-details dash-v2-section">
+    <summary><i class="bi bi-sliders" aria-hidden="true"></i> Detail Teknis &amp; Detector</summary>
+    <div class="dash-v2-details-body">
+      <p class="dash-v2-details-intro">Data ini digunakan untuk memantau performa model dan detector input sebelum klasifikasi.</p>
+      <div class="dash-v2-grid dash-v2-grid-4 compact">
+        <div class="dash-v2-mini-stat">
+          <span>Training Acc</span>
+          <strong>{% if train_accuracy is not none %}{{ (train_accuracy * 100)|round(1) }}%{% else %}<span class="dash-v2-metric-empty">Belum tersedia</span>{% endif %}</strong>
+        </div>
+        <div class="dash-v2-mini-stat">
+          <span>Validation Acc</span>
+          <strong>{% if val_accuracy is not none %}{{ (val_accuracy * 100)|round(1) }}%{% else %}<span class="dash-v2-metric-empty">Belum tersedia</span>{% endif %}</strong>
+        </div>
+        <div class="dash-v2-mini-stat">
+          <span>Precision</span>
+          <strong>{% if precision is not none %}{{ (precision * 100)|round(1) }}%{% else %}<span class="dash-v2-metric-empty">Belum tersedia</span>{% endif %}</strong>
+        </div>
+        <div class="dash-v2-mini-stat">
+          <span>F1-Score</span>
+          <strong>{% if f1_score is not none %}{{ (f1_score * 100)|round(1) }}%{% else %}<span class="dash-v2-metric-empty">Belum tersedia</span>{% endif %}</strong>
+        </div>
+      </div>
+      <div class="dash-v2-grid dash-v2-grid-4 compact mt-2">
+        <div class="dash-v2-mini-stat">
+          <span>Detector Accuracy</span>
+          <strong>{% if detector_eval.get('binary_accuracy') is not none %}{{ (detector_eval.binary_accuracy * 100)|round(1) }}%{% else %}<span class="dash-v2-metric-empty">Perlu evaluasi detector</span>{% endif %}</strong>
+        </div>
+        <div class="dash-v2-mini-stat">
+          <span>False Rejection</span>
+          <strong>{% if detector_eval.get('false_rejection_rate') is not none %}{{ (detector_eval.false_rejection_rate * 100)|round(1) }}%{% else %}<span class="dash-v2-metric-empty">Perlu evaluasi detector</span>{% endif %}</strong>
+        </div>
+        <div class="dash-v2-mini-stat">
+          <span>False Acceptance</span>
+          <strong>{% if detector_eval.get('false_acceptance_rate') is not none %}{{ (detector_eval.false_acceptance_rate * 100)|round(1) }}%{% else %}<span class="dash-v2-metric-empty">Perlu evaluasi detector</span>{% endif %}</strong>
+        </div>
+        <div class="dash-v2-mini-stat">
+          <span>Threshold</span>
+          <strong>{{ (khat_thresholds.accept * 100)|round(0) }}% / {{ (khat_thresholds.reject * 100)|round(0) }}%</strong>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  {# ── Collapsible: research workflow ── #}
+  <details class="dash-v2-details dash-v2-section">
+    <summary><i class="bi bi-diagram-3" aria-hidden="true"></i> Alur Penelitian</summary>
+    <div class="dash-v2-details-body">
+      <p class="dash-v2-details-intro">Alur ini menggambarkan tahapan penelitian klasifikasi citra kaligrafi Arab.</p>
+      <div class="dash-v2-stepper" role="list">
+        {% for step in workflow_steps %}
+        {% if not loop.first %}<div class="dash-v2-step-connector {{ 'done' if step.done else '' }}" aria-hidden="true"></div>{% endif %}
+        <div class="dash-v2-step {{ 'done' if step.done else '' }} {{ 'current' if step.current else '' }}" role="listitem">
+          <span class="dash-v2-step-num">{{ step.num }}</span>
+          <i class="bi {{ step.icon }} dash-v2-step-icon" aria-hidden="true"></i>
+          <span class="dash-v2-step-label">{{ step.label }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </details>
+
+</div>
+{% endblock %}

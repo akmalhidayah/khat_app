@@ -1,0 +1,21 @@
+{
+  "architecture": "efficientnetb0",
+  "architecture_label": "EfficientNetB0 Transfer Learning",
+  "validation_accuracy": 0.8035714030265808,
+  "test_accuracy": null,
+  "training_mode": "research",
+  "training_mode_label": "Research Accuracy",
+  "training_date": "2026-07-05 14:46 UTC",
+  "dataset_version": {
+    "train_count": 1904,
+    "validation_count": 336,
+    "test_count": 560
+  },
+  "class_mapping": [
+    "naskhi",
+    "diwani",
+    "diwani_jali",
+    "tsuluts"
+  ],
+  "best_model_path": "E:\\xampp\\htdocs\\khat-classification-web\\model\\khat_best.keras"
+}

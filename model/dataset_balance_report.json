@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-07-05 14:51:12 UTC",
+  "target_per_class": 476,
+  "original_counts": {
+    "naskhi": 476,
+    "diwani": 476,
+    "diwani_jali": 476,
+    "tsuluts": 476
+  },
+  "augmented_counts": {
+    "naskhi": 0,
+    "diwani": 0,
+    "diwani_jali": 0,
+    "tsuluts": 0
+  },
+  "final_counts": {
+    "naskhi": 476,
+    "diwani": 476,
+    "diwani_jali": 476,
+    "tsuluts": 476
+  },
+  "balanced_train_dir": "D:\\dataset_kaligrafi\\processed_balanced\\train"
+}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Perhitungan Algoritma{% endblock %}
+{% block page_container_class %}page-container-compact algo-page-container{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/algorithm_calculation.css') }}">
+{% endblock %}
+{% block content %}
+<div class="algo-page" id="algoPageRoot">
+
+  {# ── Hero ── #}
+  <header class="algo-hero" id="algoTop">
+    <div class="algo-hero-main">
+      <p class="algo-eyebrow">Arabic Khat AI · Dokumentasi Penelitian</p>
+      <h1 class="algo-title">Perhitungan Algoritma</h1>
+      <p class="algo-subtitle">Rincian alur kerja, rumus, probabilitas, validasi, dan evaluasi algoritma klasifikasi Khat Arab.</p>
+      <p class="algo-intro">
+        Halaman ini menyajikan seluruh proses perhitungan algoritma yang digunakan dalam sistem, mulai dari input gambar,
+        preprocessing, inferensi model, softmax probability, ranking kelas, validasi keputusan, hingga evaluasi performa model.
+      </p>
+    </div>
+    <div class="algo-hero-badges">
+      <span class="algo-badge"><i class="bi bi-cpu"></i> Active Model: {{ model_info.source }}</span>
+      <span class="algo-badge"><i class="bi bi-lightning"></i> Runtime: {{ model_info.runtime }}</span>
+      <span class="algo-badge"><i class="bi bi-aspect-ratio"></i> Input: {{ model_info.input_size }}</span>
+      <span class="algo-badge"><i class="bi bi-grid-3x3"></i> Classes: {{ model_info.output_count }}</span>
+      {% if dataset_summary.processed_total %}
+      <span class="algo-badge"><i class="bi bi-images"></i> Dataset: {{ dataset_summary.processed_total }} citra</span>
+      {% endif %}
+      {% if evaluation_summary.available %}
+      <span class="algo-badge"><i class="bi bi-graph-up"></i> Akurasi Uji: {{ evaluation_summary.accuracy_pct }}%</span>
+      {% endif %}
+      <span class="algo-badge accent"><i class="bi bi-mortarboard"></i> Research Mode</span>
+    </div>
+    <div class="algo-action-row no-print">
+      <button type="button" class="btn algo-btn-outline btn-sm" id="algoPrintBtn"><i class="bi bi-printer me-1"></i>Print Page</button>
+      <button type="button" class="btn algo-btn-outline btn-sm" id="algoPdfBtn"><i class="bi bi-file-earmark-pdf me-1"></i>Export to PDF</button>
+      <a href="{{ report_url }}" class="btn algo-btn-outline btn-sm"><i class="bi bi-file-earmark-bar-graph me-1"></i>Include in Report</a>
+      <a href="{{ url_for('algorithm_calculation.download_algorithm_explanation') }}" class="btn algo-btn-primary btn-sm"><i class="bi bi-download me-1"></i>Download Algorithm Explanation</a>
+    </div>
+  </header>
+
+  {# ── Table of contents ── #}
+  <nav class="algo-toc card algo-card no-print" aria-label="Daftar isi">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-list-ul me-2"></i>Daftar Isi</h2>
+    </div>
+    <ol class="algo-toc-list">
+      <li><a href="#sec-walkthrough">Perhitungan Langkah demi Langkah</a></li>
+      <li><a href="#sec-summary">Ringkasan Algoritma</a></li>
+      <li><a href="#sec-workflow">Alur Kerja Sistem</a></li>
+      <li><a href="#sec-stage1">Tahap 1 — Validasi Khat / Non-Khat</a></li>
+      <li><a href="#sec-stage2">Tahap 2 — Klasifikasi Jenis Khat</a></li>
+      <li><a href="#sec-preprocess">Preprocessing Gambar</a></li>
+      <li><a href="#sec-model">Model dan Input Tensor</a></li>
+      <li><a href="#sec-softmax">Softmax Probability</a></li>
+      <li><a href="#sec-ranking">Ranking Kelas</a></li>
+      <li><a href="#sec-confidence">Perhitungan Confidence</a></li>
+      <li><a href="#sec-margin">Perhitungan Top-2 Margin</a></li>
+      <li><a href="#sec-validation">Validasi Label Pembanding</a></li>
+      <li><a href="#sec-unknown">Deteksi Kelas Tidak Dikenal</a></li>
+      <li><a href="#sec-decision">Logika Keputusan Akhir</a></li>
+      <li><a href="#sec-sample">Contoh Perhitungan Prediksi</a></li>
+      <li><a href="#sec-evaluation">Evaluasi Model</a></li>
+      <li><a href="#sec-confusion">Confusion Matrix</a></li>
+      <li><a href="#sec-metrics">Precision, Recall, dan F1-Score</a></li>
+      <li><a href="#sec-errors">Analisis Kesalahan Prediksi</a></li>
+      <li><a href="#sec-dataset">Pengaruh Dataset</a></li>
+      <li><a href="#sec-thesis">Interpretasi Akademik untuk Skripsi</a></li>
+      <li><a href="#sec-limitations">Catatan Batasan Sistem</a></li>
+    </ol>
+  </nav>
+
+  {% include "includes/algorithm_calculation_walkthrough.html" %}
+  {% include "includes/algorithm_calculation_sections.html" %}
+
+  <footer class="algo-footer no-print">
+    <p>Dokumentasi algoritma Arabic Khat AI · {{ model_info.source }} · {{ model_info.runtime }}</p>
+    <a href="#algoTop" class="algo-back-top"><i class="bi bi-arrow-up"></i> Kembali ke atas</a>
+  </footer>
+</div>
+<script src="{{ url_for('static', filename='js/algorithm_calculation.js') }}"></script>
+{% endblock %}

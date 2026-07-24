@@ -1,0 +1,38 @@
+{
+  "split_ratio": "80/20 (train+validation / test holdout)",
+  "effective_ratio": "68/12/20 train/validation/test",
+  "train_holdout_percent": 80,
+  "test_holdout_percent": 20,
+  "stratified": true,
+  "deduplication_applied": false,
+  "evaluation_policy": "Evaluate only on test holdout \u2014 never on training images.",
+  "splits": {
+    "train": {
+      "total": 1904,
+      "per_class": {
+        "naskhi": 476,
+        "diwani": 476,
+        "diwani_jali": 476,
+        "tsuluts": 476
+      }
+    },
+    "validation": {
+      "total": 336,
+      "per_class": {
+        "naskhi": 84,
+        "diwani": 84,
+        "diwani_jali": 84,
+        "tsuluts": 84
+      }
+    },
+    "test": {
+      "total": 560,
+      "per_class": {
+        "naskhi": 140,
+        "diwani": 140,
+        "diwani_jali": 140,
+        "tsuluts": 140
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "status": "completed",
+  "message": "Training completed successfully. Validation below 85% target \u2014 run evaluation on the test set.",
+  "started_at": "2026-07-05 14:51:01 UTC",
+  "finished_at": "2026-07-06 01:04:57 UTC",
+  "current_stage": "Completed",
+  "current_epoch": 15,
+  "total_epochs": 15,
+  "model_path": "E:\\xampp\\htdocs\\khat-classification-web\\model\\khat_latest.keras",
+  "progress_percent": 100,
+  "phase": "Completed",
+  "target_achieved": false,
+  "best_validation_accuracy": 0.7916666865348816,
+  "batch_size_reduced": false
+}

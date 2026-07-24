@@ -1,0 +1,66 @@
+
+# Production environment
+.env
+.venv-linux/
+.gunicorn/
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime data
+logs/
+uploads/
+temp/
+instance/
+dataset/
+
+# Trained model binaries
+model/*.keras
+model/*.h5
+model/*.weights.h5
+model/*.pkl
+model/*.pt
+static/model/*.bin
+tm-my-image-model.zip
+
+# OS files
+.DS_Store
+__MACOSX/
+
+# Konfigurasi rahasia
+.env
+.env.*
+!.env.example
+
+# Python environment
+.venv-linux/
+venv/
+.gunicorn/
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime application
+logs/
+uploads/
+temp/
+instance/
+dataset/
+
+# Database runtime
+*.db
+*.sqlite
+*.sqlite3
+
+# Model AI binary
+model/*.keras
+model/*.h5
+model/*.weights.h5
+model/*.pkl
+model/*.pt
+static/model/*.bin
+tm-my-image-model.zip
+
+# Temporary and OS files
+.DS_Store
+__MACOSX/

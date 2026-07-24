@@ -1,0 +1,697 @@
+{% extends "base.html" %}
+{% block title %}Evaluasi Model{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/evaluation.css') }}">
+{% endblock %}
+{% block content %}
+<div class="eval-v2">
+
+  {# ── Header ── #}
+  <header class="eval-v2-header">
+    <div class="eval-v2-header-text">
+      <h1 class="eval-v2-title">Evaluasi Model</h1>
+      <p class="eval-v2-subtitle">Metrik kinerja nyata dihitung hanya pada holdout test set.</p>
+      {% if evaluated_at %}
+      <small class="eval-v2-meta">Terakhir dievaluasi: {{ evaluated_at }}{% if test_samples %} · {{ test_samples }} sampel test{% endif %}</small>
+      {% endif %}
+    </div>
+    <div class="eval-v2-header-actions">
+      <form method="post" action="{{ url_for('evaluation.run_evaluation') }}" class="d-inline">
+        <button class="btn eval-v2-btn-primary" type="submit" {% if not eval_deps_ok %}disabled title="Pasang dependensi evaluasi terlebih dahulu"{% endif %}><i class="bi bi-play-circle me-1"></i>Jalankan Evaluasi</button>
+      </form>
+      {% if misclassified_rows %}
+      <form method="post" action="{{ url_for('evaluation.rebuild_previews') }}" class="d-inline">
+        <button class="btn eval-v2-btn-outline btn-sm" type="submit" title="Rebuild cached evaluation image previews">
+          <i class="bi bi-images me-1"></i>Rebuild Image Previews
+        </button>
+      </form>
+      {% endif %}
+      {% if has_any_download %}
+      <div class="btn-group">
+        <button type="button" class="btn eval-v2-btn-outline dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-download me-1"></i>Unduh Laporan
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          {% if downloads.csv %}
+          <li><a class="dropdown-item" href="{{ url_for('evaluation.download_report', kind='csv') }}"><i class="bi bi-filetype-csv me-2"></i>Unduh CSV</a></li>
+          {% endif %}
+          {% if downloads.json %}
+          <li><a class="dropdown-item" href="{{ url_for('evaluation.download_report', kind='json') }}"><i class="bi bi-filetype-json me-2"></i>Unduh JSON Evaluasi</a></li>
+          {% endif %}
+          {% if downloads.confusion_matrix %}
+          <li><a class="dropdown-item" href="{{ url_for('evaluation.download_report', kind='confusion-matrix') }}"><i class="bi bi-grid-3x3 me-2"></i>Unduh Confusion Matrix</a></li>
+          {% endif %}
+          {% if downloads.misclassification %}
+          <li><a class="dropdown-item" href="{{ url_for('evaluation.download_report', kind='misclassification') }}"><i class="bi bi-exclamation-diamond me-2"></i>Unduh Laporan Misclassification</a></li>
+          {% endif %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if not eval_deps_ok %}
+  <div class="alert alert-danger eval-v2-deps-alert" role="alert">
+    <div class="d-flex align-items-start gap-2">
+      <i class="bi bi-exclamation-octagon-fill fs-5"></i>
+      <div>
+        <strong>Dependensi evaluasi belum lengkap.</strong>
+        <p class="mb-2 mt-1">{{ eval_deps_message or 'TensorFlow diperlukan untuk menjalankan evaluasi model Keras.' }}</p>
+        <pre class="eval-v2-deps-cmd mb-2">installer\install_eval_deps.bat</pre>
+        <p class="mb-0 small text-muted">Setelah instalasi, restart server Flask lalu klik Jalankan Evaluasi lagi.</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if model_eval.available %}
+  <section class="eval-v2-model-banner">
+    <div class="eval-v2-model-banner-main">
+      <span class="eval-v2-badge ok"><i class="bi bi-cpu"></i> Model Aktif</span>
+      <div>
+        <strong>{{ model_eval.engine_label }}</strong>
+        <span>{{ model_eval.model_name }}{% if model_eval.architecture %} · {{ model_eval.architecture }}{% endif %}</span>
+        {% if model_eval.model_path %}<small class="d-block text-muted">{{ model_eval.model_path }}</small>{% endif %}
+        {% if model_eval.dataset_source %}<small class="d-block text-muted">Dataset: {{ model_eval.dataset_source }}</small>{% endif %}
+      </div>
+    </div>
+    <div class="eval-v2-model-banner-meta">
+      <span><i class="bi bi-hdd-stack"></i> {{ model_eval.runtime or 'TensorFlow Keras' }}</span>
+      {% if test_samples %}<span><i class="bi bi-images"></i> {{ test_samples }} gambar test</span>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if has_results %}
+  {# Target badge row #}
+  <div class="eval-v2-target-bar">
+    <span class="eval-v2-badge neutral"><i class="bi bi-bullseye"></i> Target Riset: {{ eval_summary.target_pct }}%</span>
+    {% if eval_summary.accuracy_pct is not none %}
+    <span class="eval-v2-badge neutral"><i class="bi bi-percent"></i> Akurasi: {{ eval_summary.accuracy_pct }}%</span>
+    {% endif %}
+    <span class="eval-v2-badge {{ 'ok' if eval_summary.target_achieved else 'warn' }}">
+      <i class="bi bi-{{ 'check-circle' if eval_summary.target_achieved else 'exclamation-triangle' }}"></i>
+      {{ 'Target Tercapai' if eval_summary.target_achieved else 'Di Bawah Target Riset' }}
+    </span>
+  </div>
+
+  {# ── Ringkasan Evaluasi ── #}
+  <section class="eval-v2-section eval-v2-summary-section">
+    <div class="eval-v2-section-head">
+      <h2 class="eval-v2-section-title">Ringkasan Evaluasi</h2>
+      <p class="eval-v2-section-desc">Metrik utama pada holdout test set{% if test_samples %} · {{ test_samples }} sampel{% endif %}</p>
+    </div>
+    <div class="eval-v2-grid eval-v2-grid-4">
+      {% for card in metric_cards %}
+      <div class="eval-v2-metric tone-{{ card.tone }}">
+        <div class="eval-v2-metric-icon"><i class="bi {{ card.icon }}"></i></div>
+        <div class="eval-v2-metric-body">
+          <div class="eval-v2-metric-label">{{ card.label }}</div>
+          <div class="eval-v2-metric-value">{{ (card.value * 100)|round(2) if card.value is not none else '—' }}%</div>
+          <div class="eval-v2-metric-desc">{{ card.desc }}</div>
+          <div class="eval-v2-metric-hint">{{ card.hint }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="eval-v2-target-inline {{ 'is-achieved' if eval_summary.target_achieved else 'is-pending' }}">
+      <div class="eval-v2-target-inline-main">
+        <i class="bi bi-{{ 'check-circle-fill' if eval_summary.target_achieved else 'exclamation-triangle-fill' }}"></i>
+        <div>
+          <strong>Target Riset {{ eval_summary.target_pct }}%</strong>
+          <span>{{ 'Target tercapai — model siap untuk pelaporan riset.' if eval_summary.target_achieved else 'Belum tercapai — akurasi ' ~ eval_summary.accuracy_pct ~ '%, gap ' ~ eval_summary.accuracy_gap ~ '%.' }}</span>
+          {% if accuracy_formula.available %}
+          <small class="d-block mt-1 text-muted"><code>{{ accuracy_formula.formula }}</code></small>
+          {% endif %}
+        </div>
+      </div>
+      <a href="{{ url_for('model_management.model_management_page') }}" class="btn eval-v2-btn-primary btn-sm"><i class="bi bi-box-seam me-1"></i>Manajemen Model</a>
+    </div>
+  </section>
+
+  {# Test holdout summary + model info #}
+  {% if has_results %}
+  {% if eval_counts.warnings %}
+  <div class="eval-v2-alert eval-v2-alert-warn mb-3" role="alert">
+    <i class="bi bi-exclamation-triangle me-1"></i>
+    {% for warning in eval_counts.warnings %}<div>{{ warning }}</div>{% endfor %}
+  </div>
+  {% endif %}
+  <section class="eval-v2-section">
+    <div class="eval-v2-grid eval-v2-grid-6">
+      <div class="eval-v2-metric tone-neutral">
+        <div class="eval-v2-metric-body">
+          <div class="eval-v2-metric-label">Total Dataset</div>
+          <div class="eval-v2-metric-value">{{ eval_counts.total_dataset_raw or eval_counts.total_dataset_processed or dataset_eval.total_dataset_processed or '—' }}</div>
+          <div class="eval-v2-metric-desc">Seluruh gambar kaligrafi yang diimpor</div>
+        </div>
+      </div>
+      <div class="eval-v2-metric tone-neutral">
+        <div class="eval-v2-metric-body">
+          <div class="eval-v2-metric-label">Data Latih (80%)</div>
+          <div class="eval-v2-metric-value">{{ (eval_counts.train_images or 0) + (eval_counts.validation_images or 0) or '—' }}</div>
+          <div class="eval-v2-metric-desc">Train {{ eval_counts.train_images or '—' }} + validation {{ eval_counts.validation_images or '—' }}</div>
+        </div>
+      </div>
+      <div class="eval-v2-metric tone-info">
+        <div class="eval-v2-metric-body">
+          <div class="eval-v2-metric-label">Data Uji (20%)</div>
+          <div class="eval-v2-metric-value">{{ test_samples or '—' }}</div>
+          <div class="eval-v2-metric-desc">
+            {% if eval_counts.holdout_percent is not none and eval_counts.total_dataset_processed %}
+            Holdout {{ eval_counts.holdout_percent }}% · {{ test_samples }} dari {{ eval_counts.total_dataset_processed }} gambar diproses
+            {% else %}
+            Holdout 20% — tidak dipakai training
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="eval-v2-metric tone-success">
+        <div class="eval-v2-metric-body">
+          <div class="eval-v2-metric-label">Prediksi Benar</div>
+          <div class="eval-v2-metric-value">{{ correct_predictions if correct_predictions is not none else '—' }}</div>
+        </div>
+      </div>
+      <div class="eval-v2-metric tone-danger">
+        <div class="eval-v2-metric-body">
+          <div class="eval-v2-metric-label">Prediksi Salah</div>
+          <div class="eval-v2-metric-value">{{ incorrect_predictions if incorrect_predictions is not none else '—' }}</div>
+        </div>
+      </div>
+      <div class="eval-v2-metric tone-neutral">
+        <div class="eval-v2-metric-body">
+          <div class="eval-v2-metric-label">Mesin Evaluasi</div>
+          <div class="eval-v2-metric-value" style="font-size:1rem;">{{ model_eval.engine_label if model_eval.available else ('Teachable Machine' if active_engine == 'teachable_machine' else 'Keras') }}</div>
+          {% if model_eval.available %}
+          <div class="eval-v2-metric-desc">{{ model_eval.model_name }} · {{ model_eval.runtime }}</div>
+          {% elif tm_info %}<div class="eval-v2-metric-desc">{{ tm_info.model_name }} · TensorFlow.js</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Dataset evaluasi (holdout test) ── #}
+  {% if dataset_eval.available %}
+  <section class="eval-v2-section eval-v2-card">
+    <div class="eval-v2-card-head">
+      <span><i class="bi bi-collection"></i> Dataset Evaluasi (Holdout Test)</span>
+      {% if dataset_eval.stratified %}<span class="eval-v2-badge ok">Stratified</span>{% endif %}
+    </div>
+    <div class="eval-v2-card-body">
+      <div class="eval-v2-grid eval-v2-grid-4 mb-3">
+        <div class="eval-v2-metric tone-neutral">
+          <div class="eval-v2-metric-body">
+            <div class="eval-v2-metric-label">Total Test</div>
+            <div class="eval-v2-metric-value">{{ dataset_eval.total_images }}</div>
+            <div class="eval-v2-metric-desc">{{ dataset_eval.split_ratio }} · {{ dataset_eval.effective_ratio }}</div>
+          </div>
+        </div>
+        <div class="eval-v2-metric tone-neutral">
+          <div class="eval-v2-metric-body">
+            <div class="eval-v2-metric-label">Train / Val</div>
+            <div class="eval-v2-metric-value" style="font-size:1rem;">{{ dataset_eval.train_images or '—' }} / {{ dataset_eval.validation_images or '—' }}</div>
+            <div class="eval-v2-metric-desc">Tidak digunakan dalam evaluasi</div>
+          </div>
+        </div>
+        <div class="eval-v2-metric tone-neutral">
+          <div class="eval-v2-metric-body">
+            <div class="eval-v2-metric-label">Kebijakan Split</div>
+            <div class="eval-v2-metric-value" style="font-size:0.95rem;">Holdout 20%</div>
+            <div class="eval-v2-metric-desc">{{ dataset_eval.split_policy }}</div>
+          </div>
+        </div>
+        <div class="eval-v2-metric tone-neutral">
+          <div class="eval-v2-metric-body">
+            <div class="eval-v2-metric-label">Diproses</div>
+            <div class="eval-v2-metric-value">{{ dataset_eval.processed_images or '—' }}</div>
+            <div class="eval-v2-metric-desc">Train + validation + test</div>
+          </div>
+        </div>
+      </div>
+      <div class="eval-v2-table-wrap">
+        <table class="table table-sm eval-v2-table">
+          <thead>
+            <tr>
+              <th>Kelas</th>
+              <th>Sampel Test</th>
+              <th>% dari Test</th>
+              <th>Target Split</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in dataset_eval.per_class_rows %}
+            <tr>
+              <td><span class="class-pill {{ row.class_key }}">{{ row.class_name }}</span></td>
+              <td><strong>{{ row.actual_count }}</strong></td>
+              <td>{{ row.share_pct }}%</td>
+              <td>{{ row.expected_count if row.expected_count is not none else '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if dataset_eval.warnings %}
+      <ul class="eval-v2-notes eval-v2-warn-list mb-0 mt-2">
+        {% for warning in dataset_eval.warnings %}
+        <li>{{ warning }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if macro_metric_cards %}
+  <section class="eval-v2-section">
+    <div class="eval-v2-section-head">
+      <h2 class="eval-v2-section-title">Metrik Tambahan</h2>
+      <p class="eval-v2-section-desc">Macro average dan Cohen's Kappa — lebih adil untuk kelas tidak seimbang.</p>
+    </div>
+    <div class="eval-v2-grid eval-v2-grid-4">
+      {% for card in macro_metric_cards %}
+      <div class="eval-v2-metric tone-{{ card.tone }}">
+        <div class="eval-v2-metric-icon"><i class="bi {{ card.icon }}"></i></div>
+        <div class="eval-v2-metric-body">
+          <div class="eval-v2-metric-label">{{ card.label }}</div>
+          <div class="eval-v2-metric-value">{{ card.value }}</div>
+          <div class="eval-v2-metric-desc">{{ card.desc }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Visual hero: Confusion Matrix + Performance Insights ── #}
+  <section class="eval-v2-section eval-v2-visual-hero">
+    <div class="eval-v2-card eval-v2-cm-hero">
+      <div class="eval-v2-card-head">
+        <span><i class="bi bi-grid-3x3"></i> Confusion Matrix</span>
+        {% if downloads.confusion_matrix %}
+        <a href="{{ url_for('evaluation.download_report', kind='confusion-matrix') }}" class="eval-v2-link-sm"><i class="bi bi-download"></i> Unduh</a>
+        {% endif %}
+      </div>
+      <div class="eval-v2-card-body eval-v2-chart-body">
+        {% if confusion_matrix %}
+        <p class="eval-v2-cm-note">Baris = kelas sebenarnya · Kolom = kelas prediksi · <span class="cm-legend-diag">hijau</span> = benar · <span class="cm-legend-off">oranye</span> = salah · <span class="cm-legend-zero">—</span> = tidak ada kasus</p>
+        <div class="eval-v2-cm-scroll">
+          <table class="eval-v2-cm-table">
+            <thead>
+              <tr>
+                <th class="sticky-col">True \ Pred</th>
+                {% for label in confusion_matrix_labels %}<th>Pred {{ label }}</th>{% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in confusion_matrix %}
+              {% set row_i = loop.index0 %}
+              <tr>
+                <th class="sticky-col">True {{ confusion_matrix_labels[row_i] }}</th>
+                {% for cell in row %}
+                {% set col_i = loop.index0 %}
+                {% set is_diag = col_i == row_i %}
+                <td class="{% if is_diag and cell > 0 %}cm-diag{% elif is_diag %}cm-diag cm-zero{% elif cell > 0 %}cm-off{% else %}cm-zero{% endif %}">{% if cell > 0 %}{{ cell }}{% else %}<span class="cm-empty" aria-hidden="true">—</span>{% endif %}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if downloads.confusion_matrix %}
+        <details class="eval-v2-cm-png-details no-print mt-3">
+          <summary class="eval-v2-cm-png-summary"><i class="bi bi-image me-1"></i>Tampilkan versi grafik (PNG)</summary>
+          <div class="eval-v2-chart-frame eval-v2-cm-frame mt-2">
+            <img src="{{ url_for('static', filename='evaluation/confusion_matrix.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-cm-img" alt="Confusion matrix grafik">
+          </div>
+        </details>
+        {% endif %}
+        {% else %}
+        <div class="eval-v2-chart-frame eval-v2-cm-frame">
+          <p class="eval-v2-hint mb-0">Jalankan evaluasi untuk menghasilkan confusion matrix.</p>
+        </div>
+        {% endif %}
+        <p class="eval-v2-matrix-caption"><i class="bi bi-info-circle me-1"></i>Sel diagonal (hijau) = prediksi benar. Sel off-diagonal (oranye) = kesalahan klasifikasi. Tanda <strong>—</strong> berarti tidak ada sampel pada kombinasi kelas tersebut.</p>
+        {% if confusion_info.message %}
+        <p class="eval-v2-hint-secondary mb-0">{{ confusion_info.message }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <aside class="eval-v2-card eval-v2-insights-panel">
+      <div class="eval-v2-card-head"><span><i class="bi bi-lightbulb"></i> Performance Insights</span></div>
+      <div class="eval-v2-card-body">
+        <ul class="eval-v2-insights-list">
+          {% for insight in performance_insights %}
+          <li>{{ insight }}</li>
+          {% endfor %}
+        </ul>
+        <div class="eval-v2-insights-meta">
+          <div><span>Target</span><strong>{{ eval_summary.target_pct }}%</strong></div>
+          <div><span>Akurasi</span><strong>{{ eval_summary.accuracy_pct ~ '%' if eval_summary.accuracy_pct is not none else '—' }}</strong></div>
+          <div><span>F1-Score</span><strong>{{ eval_summary.f1_pct ~ '%' if eval_summary.f1_pct is not none else '—' }}</strong></div>
+        </div>
+        <p class="eval-v2-hint mb-0 mt-3">{{ eval_summary.readiness_message }}</p>
+      </div>
+    </aside>
+  </section>
+
+  {# ── Riwayat Training (kurva akurasi & loss) ── #}
+  <section class="eval-v2-section eval-v2-training-section">
+    <div class="eval-v2-section-head">
+      <h2 class="eval-v2-section-title">Riwayat Training</h2>
+      <p class="eval-v2-section-desc">Kurva akurasi dan loss — bandingkan training vs validation untuk menilai stabilitas model.</p>
+    </div>
+
+    {% if downloads.accuracy_curves or downloads.loss_curves %}
+    <div class="eval-v2-chart-showcase">
+      {% if downloads.accuracy_curves %}
+      <div class="eval-v2-card eval-v2-chart-card">
+        <div class="eval-v2-card-head"><span><i class="bi bi-graph-up-arrow"></i> Model Accuracy</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/accuracy_curves.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Training and validation accuracy">
+          </div>
+          <p class="eval-v2-chart-caption">Garis hijau = training, biru = validation. Gap lebar mengindikasikan overfitting.</p>
+        </div>
+      </div>
+      {% endif %}
+      {% if downloads.loss_curves %}
+      <div class="eval-v2-card eval-v2-chart-card">
+        <div class="eval-v2-card-head"><span><i class="bi bi-activity"></i> Model Loss</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/loss_curves.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Training and validation loss">
+          </div>
+          <p class="eval-v2-chart-caption">Loss validation yang stagnan atau naik sementara training turun mengindikasikan overfitting.</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if downloads.training_accuracy or downloads.validation_accuracy or downloads.training_loss or downloads.validation_loss %}
+    <div class="eval-v2-chart-showcase eval-v2-curves-grid mt-3">
+      {% if downloads.training_accuracy %}
+      <div class="eval-v2-card eval-v2-chart-card eval-v2-chart-card-compact">
+        <div class="eval-v2-card-head"><span><i class="bi bi-graph-up"></i> Training Accuracy</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/training_accuracy.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Training accuracy curve">
+          </div>
+        </div>
+      </div>
+      {% endif %}
+      {% if downloads.validation_accuracy %}
+      <div class="eval-v2-card eval-v2-chart-card eval-v2-chart-card-compact">
+        <div class="eval-v2-card-head"><span><i class="bi bi-graph-up"></i> Validation Accuracy</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/validation_accuracy.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Validation accuracy curve">
+          </div>
+        </div>
+      </div>
+      {% endif %}
+      {% if downloads.training_loss %}
+      <div class="eval-v2-card eval-v2-chart-card eval-v2-chart-card-compact">
+        <div class="eval-v2-card-head"><span><i class="bi bi-activity"></i> Training Loss</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/training_loss.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Training loss curve">
+          </div>
+        </div>
+      </div>
+      {% endif %}
+      {% if downloads.validation_loss %}
+      <div class="eval-v2-card eval-v2-chart-card eval-v2-chart-card-compact">
+        <div class="eval-v2-card-head"><span><i class="bi bi-activity"></i> Validation Loss</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/validation_loss.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Validation loss curve">
+          </div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if curve_notes %}
+    <div class="eval-v2-card eval-v2-curve-notes-card mt-3">
+      <div class="eval-v2-card-head"><span><i class="bi bi-chat-left-text"></i> Interpretasi Kurva</span></div>
+      <div class="eval-v2-card-body">
+        <ul class="eval-v2-notes mb-0">
+          {% for note in curve_notes %}
+          <li>{{ note }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  {# ── Grafik metrik per kelas ── #}
+  {% if downloads.precision_per_class or downloads.recall_per_class or downloads.f1_per_class or downloads.per_class_metrics_comparison %}
+  <section class="eval-v2-section eval-v2-metrics-charts-section">
+    <div class="eval-v2-section-head">
+      <h2 class="eval-v2-section-title">Grafik Metrik Per Kelas</h2>
+      <p class="eval-v2-section-desc">Visualisasi precision, recall, F1-score, dan perbandingan metrik untuk setiap kelas kaligrafi.</p>
+    </div>
+
+    {% if downloads.precision_per_class or downloads.recall_per_class or downloads.f1_per_class %}
+    <div class="eval-v2-chart-showcase eval-v2-metrics-grid">
+      {% if downloads.precision_per_class %}
+      <div class="eval-v2-card eval-v2-chart-card">
+        <div class="eval-v2-card-head"><span><i class="bi bi-bar-chart-line"></i> Precision per Kelas</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/precision_per_class.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Precision per kelas">
+          </div>
+          <p class="eval-v2-chart-caption">Proporsi prediksi benar dari seluruh prediksi untuk kelas tersebut.</p>
+        </div>
+      </div>
+      {% endif %}
+      {% if downloads.recall_per_class %}
+      <div class="eval-v2-card eval-v2-chart-card">
+        <div class="eval-v2-card-head"><span><i class="bi bi-bar-chart-line"></i> Recall per Kelas</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/recall_per_class.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Recall per kelas">
+          </div>
+          <p class="eval-v2-chart-caption">Proporsi sampel kelas yang berhasil dikenali dengan benar oleh model.</p>
+        </div>
+      </div>
+      {% endif %}
+      {% if downloads.f1_per_class %}
+      <div class="eval-v2-card eval-v2-chart-card">
+        <div class="eval-v2-card-head"><span><i class="bi bi-bar-chart-line"></i> F1-Score per Kelas</span></div>
+        <div class="eval-v2-card-body">
+          <div class="eval-v2-chart-frame eval-v2-showcase-frame">
+            <img src="{{ url_for('static', filename='evaluation/f1_per_class.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="F1-Score per kelas">
+          </div>
+          <p class="eval-v2-chart-caption">Rata-rata harmonik precision dan recall — mengukur keseimbangan kinerja klasifikasi per kelas.</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if downloads.per_class_metrics_comparison %}
+    <div class="eval-v2-card eval-v2-chart-card eval-v2-comparison-chart mt-3">
+      <div class="eval-v2-card-head"><span><i class="bi bi-bar-chart-steps"></i> Perbandingan Precision, Recall &amp; F1-Score</span></div>
+      <div class="eval-v2-card-body">
+        <div class="eval-v2-chart-frame eval-v2-showcase-frame eval-v2-comparison-frame">
+          <img src="{{ url_for('static', filename='evaluation/per_class_metrics_comparison.png') }}?v={{ evaluated_at or '1' }}" class="eval-v2-chart-img eval-v2-showcase-img" alt="Perbandingan precision recall f1-score per kelas">
+        </div>
+        <p class="eval-v2-chart-caption">Grafik batang berkelompok menampilkan precision (hijau), recall (biru), dan F1-score (ungu) untuk setiap kelas dalam satu tampilan.</p>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ── Per-class ── #}
+  <section class="eval-v2-card eval-v2-section">
+    <div class="eval-v2-card-head"><span><i class="bi bi-bar-chart"></i> Kinerja Per Kelas</span></div>
+    <div class="eval-v2-card-body eval-v2-table-wrap">
+      <table class="table table-sm eval-v2-table">
+        <thead>
+          <tr>
+            <th>Kelas</th>
+            <th>Presisi</th>
+            <th>Recall</th>
+            <th>F1</th>
+            <th>Akurasi Kelas</th>
+            <th>Support</th>
+            <th>Status</th>
+            <th>Rekomendasi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in per_class_rows %}
+          <tr class="{% if row.badge == 'critical' %}row-critical{% elif row.badge == 'warning' %}row-warn{% endif %}">
+            <td><span class="class-pill {{ row.class_key }}">{{ row.class_name }}</span></td>
+            <td>{{ (row.precision * 100)|round(2) }}%</td>
+            <td>{{ (row.recall * 100)|round(2) }}%</td>
+            <td>{{ (row.f1_score * 100)|round(2) }}%</td>
+            <td>{% if row.class_accuracy is not none %}{{ (row.class_accuracy * 100)|round(2) }}%{% elif row.recall is not none %}{{ (row.recall * 100)|round(2) }}%{% else %}—{% endif %}</td>
+            <td>{{ row.support|int if row.support else row.support }}</td>
+            <td>
+              <span class="status-badge {{ row.badge }}">{{ row.status_id }}</span>
+              {% if row.reason %}<small class="d-block text-muted">{{ row.reason }}</small>{% endif %}
+            </td>
+            <td class="small">{{ row.recommendation }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="eval-v2-hint-warn mb-0 mt-2"><i class="bi bi-exclamation-triangle me-1"></i>{{ class_summary_text }}</p>
+    </div>
+  </section>
+
+  {# ── Misclassification error dashboard ── #}
+  {% if misclassified_rows %}
+  {% include "includes/evaluation_errors_dashboard.html" %}
+  {% endif %}
+
+  {# ── Confusion pairs ── #}
+  {% if pairs %}
+  <section class="eval-v2-card eval-v2-section">
+    <div class="eval-v2-card-head"><span><i class="bi bi-shuffle"></i> Analisis Pasangan Kekeliruan</span></div>
+    <div class="eval-v2-card-body eval-v2-table-wrap">
+      <table class="table table-sm eval-v2-table">
+        <thead><tr><th>True Class</th><th>Diprediksi Sebagai</th><th>Jumlah</th><th>% Error</th><th></th></tr></thead>
+        <tbody>
+          {% for pair in pairs[:8] %}
+          <tr class="{% if loop.index <= 3 %}row-warn{% endif %}">
+            <td>{{ pair.true_display or pair.true_class }}</td>
+            <td>{{ pair.predicted_display or pair.predicted_class }}</td>
+            <td><strong>{{ pair.count }}</strong></td>
+            <td>{{ pair.percentage }}%</td>
+            <td>
+              <button type="button"
+                      class="btn btn-review-pair misc-filter-link"
+                      data-true-class="{{ pair.true_class }}"
+                      data-predicted-class="{{ pair.predicted_class }}"
+                      data-true="{{ pair.true_class }}"
+                      data-pred="{{ pair.predicted_class }}"
+                      aria-pressed="false">Review</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if pairs %}
+      {% set top = pairs[0] %}
+      <p class="eval-v2-hint mb-0 mt-2">
+        Kekeliruan paling sering: <strong>{{ top.true_display or top.true_class }} → {{ top.predicted_display or top.predicted_class }}</strong>
+        ({{ top.count }} kasus). Indikasi overlap visual atau training diskriminatif yang belum cukup.
+      </p>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Model Versioning ── #}
+  {% if model_versions %}
+  <section class="eval-v2-card eval-v2-section" id="model-versions">
+    <div class="eval-v2-card-head"><span><i class="bi bi-layers"></i> Model Version History</span></div>
+    <div class="eval-v2-card-body eval-v2-table-wrap">
+      <table class="table table-sm eval-v2-table">
+        <thead>
+          <tr><th>Version</th><th>Name</th><th>Source</th><th>Runtime</th><th>Dataset Images</th><th>Eval Accuracy</th><th>Date</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for v in model_versions %}
+          <tr class="{% if v.is_active %}row-active{% endif %}">
+            <td>{{ v.model_version }}</td>
+            <td>{{ v.model_name }}</td>
+            <td>{{ v.model_source }}</td>
+            <td>{{ v.model_runtime or '—' }}</td>
+            <td>{{ v.dataset_images or '—' }}</td>
+            <td>{% if v.evaluation_accuracy is not none %}{{ v.evaluation_accuracy }}%{% else %}—{% endif %}</td>
+            <td>{{ v.created_at or v.training_date or '—' }}</td>
+            <td>{% if v.is_active %}<span class="badge bg-success">Active</span>{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ── Recommendations (single block) ── #}
+  {% if recommendations %}
+  <section class="eval-v2-card eval-v2-section">
+    <div class="eval-v2-card-head"><span><i class="bi bi-lightbulb"></i> Rekomendasi Perbaikan</span></div>
+    <div class="eval-v2-card-body">
+      <ol class="eval-v2-rec-list mb-0">
+        {% for r in recommendations %}
+        <li>{{ r }}</li>
+        {% endfor %}
+      </ol>
+    </div>
+  </section>
+  {% endif %}
+
+  {# Readiness decision #}
+  <section class="eval-v2-card eval-v2-section eval-v2-readiness-card">
+    <div class="eval-v2-card-head">
+      <span><i class="bi bi-clipboard-check"></i> Keputusan Kesiapan Model</span>
+      <span class="status-badge {{ 'ready' if eval_summary.target_achieved else 'pending' }}">{{ eval_summary.readiness_label }}</span>
+    </div>
+    <div class="eval-v2-card-body">
+      <p class="mb-3">{{ eval_summary.readiness_message }}</p>
+      <div class="eval-v2-action-row">
+        <a href="{{ url_for('dataset.list_dataset') }}" class="btn eval-v2-btn-outline btn-sm">Manajemen Dataset</a>
+        <a href="{{ url_for('model_management.model_management_page') }}" class="btn eval-v2-btn-primary btn-sm">Manajemen Model</a>
+        {% if downloads.json %}
+        <a href="{{ url_for('evaluation.download_report', kind='json') }}" class="btn eval-v2-btn-outline btn-sm">Unduh JSON Evaluasi</a>
+        {% endif %}
+        {% if downloads.misclassification %}
+        <a href="{{ url_for('evaluation.download_report', kind='misclassification') }}" class="btn eval-v2-btn-outline btn-sm">Unduh Laporan Misclassification</a>
+        {% endif %}
+        {% if downloads.confusion_matrix %}
+        <a href="{{ url_for('evaluation.download_report', kind='confusion-matrix') }}" class="btn eval-v2-btn-outline btn-sm">Unduh Confusion Matrix</a>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {# Academic + export #}
+  <section class="eval-v2-card eval-v2-section">
+    <div class="eval-v2-card-head"><span><i class="bi bi-journal-text"></i> Penjelasan Akademik</span></div>
+    <div class="eval-v2-card-body">
+      <p class="eval-v2-academic mb-2">Metrik dihitung pada holdout test set setelah stratified partitioning. Data training tidak digunakan dalam evaluasi. Akurasi, presisi, recall, dan F1-score dilaporkan untuk mengukur kinerja keseluruhan dan per kelas.</p>
+      <p class="eval-v2-hint mb-3">Analisis gambar salah klasifikasi digunakan untuk mengidentifikasi kelas lemah dan kemungkinan masalah label atau preprocessing.</p>
+      <div class="eval-v2-action-row">
+        {% if downloads.csv %}
+        <a href="{{ url_for('evaluation.download_report', kind='csv') }}" class="btn eval-v2-btn-outline btn-sm"><i class="bi bi-filetype-csv me-1"></i>Unduh CSV</a>
+        {% endif %}
+        {% if downloads.json %}
+        <a href="{{ url_for('evaluation.download_report', kind='json') }}" class="btn eval-v2-btn-outline btn-sm"><i class="bi bi-filetype-json me-1"></i>Unduh JSON</a>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {% else %}
+  <div class="eval-v2-empty">
+    <i class="bi bi-clipboard-data"></i>
+    <h5>Belum ada hasil evaluasi</h5>
+    <p>Klik <strong>Jalankan Evaluasi</strong> untuk mengukur akurasi model pada holdout test set{% if dataset_eval.available %} ({{ dataset_eval.total_images }} gambar){% endif %}.</p>
+    <a href="{{ url_for('model_management.model_management_page') }}" class="btn eval-v2-btn-primary btn-sm">Ke Manajemen Model</a>
+  </div>
+  {% endif %}
+</div>
+
+{% if misclassified_rows %}
+<script>
+window.EVAL_MISCLASSIFIED = {{ misclassified_rows|tojson }};
+window.EVAL_API = {
+  markReviewed: {{ url_for('evaluation.mark_error_reviewed')|tojson }},
+  saveCorrection: {{ url_for('evaluation.save_error_correction')|tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='js/evaluation.js') }}"></script>
+{% endif %}
+{% endblock %}

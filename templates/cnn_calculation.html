@@ -1,0 +1,750 @@
+{% extends "base.html" %}
+{% block title %}Perhitungan CNN VGG16{% endblock %}
+{% block page_container_class %}page-container-compact algo-page-container{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/algorithm_calculation.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/cnn_calculation.css') }}">
+{% endblock %}
+{% block content %}
+<div class="algo-page cnn-page" id="cnnPageRoot">
+
+  <header class="algo-hero cnn-hero">
+    <div class="algo-hero-main">
+      <p class="algo-eyebrow">Arabic Khat AI · CNN Transfer Learning</p>
+      <h1 class="algo-title">Perhitungan CNN VGG16</h1>
+      <p class="algo-subtitle">Dokumentasi lengkap perhitungan dari dataset, split, class weight, arsitektur, training, hingga evaluasi test set.</p>
+      <p class="algo-intro">
+        Halaman ini mendokumentasikan <strong>seluruh rumus dan angka aktual</strong> pipeline CNN VGG16 + transfer learning ImageNet
+        pada <strong>{{ num_classes }} kelas</strong> kaligrafi —
+        {% for label in class_display_labels %}{{ label }}{% if not loop.last %}, {% endif %}{% endfor %}.
+        Dataset: <strong>{{ dataset_totals.raw }}</strong> gambar ·
+        data latih <strong>{{ split_math.train_data_count }}</strong> ({{ split_math.train_data_pct }}%) ·
+        data uji <strong>{{ split_math.test_data_count }}</strong> ({{ split_math.test_data_pct }}%).
+      </p>
+    </div>
+    <div class="algo-hero-badges">
+      <span class="algo-badge accent"><i class="bi bi-diagram-3"></i> {{ architecture_label }}</span>
+      <span class="algo-badge"><i class="bi bi-aspect-ratio"></i> Input: {{ input_size }}</span>
+      <span class="algo-badge"><i class="bi bi-grid-3x3"></i> {{ num_classes }} Kelas</span>
+      <span class="algo-badge"><i class="bi bi-database"></i> Dataset: {{ dataset_totals.processed or dataset_totals.raw }} gambar</span>
+      <span class="algo-badge"><i class="bi bi-layers"></i> Fine-tune: {{ fine_tune_layers }} layer</span>
+    </div>
+    <div class="algo-action-row no-print">
+      <a href="{{ url_for('cnn_calculation.download_cnn_calculation') }}" class="btn algo-btn-primary btn-sm">
+        <i class="bi bi-download me-1"></i>Unduh Ringkasan
+      </a>
+      <a href="{{ model_management_url }}" class="btn algo-btn-outline btn-sm"><i class="bi bi-cpu me-1"></i>Manajemen Model</a>
+      <a href="{{ dataset_url }}" class="btn algo-btn-outline btn-sm"><i class="bi bi-database me-1"></i>Dataset</a>
+      <a href="{{ algo_doc_url }}" class="btn algo-btn-outline btn-sm"><i class="bi bi-journal-code me-1"></i>Dokumentasi Algoritma</a>
+    </div>
+  </header>
+
+  <nav class="algo-toc card algo-card no-print cnn-toc" aria-label="Daftar isi perhitungan CNN">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-list-ol me-2"></i>Alur Perhitungan (Awal → Akhir)</h2>
+    </div>
+    <ol class="algo-toc-list cnn-toc-grid">
+      {% for item in pipeline_overview %}
+      <li><a href="#{{ item.anchor }}"><span class="cnn-toc-num">{{ item.num }}</span>{{ item.title }}<small>{{ item.desc }}</small></a></li>
+      {% endfor %}
+    </ol>
+  </nav>
+
+  {# ── 01 Dataset & Split ── #}
+  <section class="algo-card card cnn-section" id="sec-dataset">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-pie-chart me-2"></i>01 · Dataset &amp; Pembagian 80/20</h2>
+    </div>
+    <div class="algo-card-body">
+      <div class="cnn-totals-grid cnn-totals-grid-5">
+        <div class="cnn-total-card">
+          <span>Total Dataset</span>
+          <strong>{{ dataset_totals.processed or dataset_totals.raw }}</strong>
+        </div>
+        <div class="cnn-total-card accent-latih">
+          <span>Data Latih (80%)</span>
+          <strong>{{ split_math.train_data_count }}</strong>
+        </div>
+        <div class="cnn-total-card accent-train">
+          <span>Train</span>
+          <strong>{{ dataset_totals.train }}</strong>
+        </div>
+        <div class="cnn-total-card accent-val">
+          <span>Validation</span>
+          <strong>{{ dataset_totals.validation }}</strong>
+        </div>
+        <div class="cnn-total-card accent-test">
+          <span>Data Uji (20%)</span>
+          <strong>{{ dataset_totals.test }}</strong>
+        </div>
+      </div>
+
+      <div class="cnn-calc-box cnn-split-math-box">
+        <h3>Perhitungan Pembagian 80% Latih / 20% Uji</h3>
+        <div class="cnn-split-formula-grid">
+          {% for item in split_math.formulas %}
+          <div class="cnn-split-formula-item">
+            <strong>{{ item.title }}</strong>
+            <code class="cnn-formula">{{ item.expression }}</code>
+            <p>{{ item.detail }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      {% if split_report %}
+      <div class="cnn-split-meta">
+        <span><strong>Rasio:</strong> {{ split_report.effective_ratio or '68/12/20' }}</span>
+        <span><strong>Stratified:</strong> {{ 'Ya' if split_report.stratified else 'Tidak' }}</span>
+        <span><strong>Kebijakan evaluasi:</strong> {{ split_report.evaluation_policy or 'Hanya pada test holdout' }}</span>
+      </div>
+      {% endif %}
+
+      <h3 class="cnn-subheading">Tahapan Pembagian Dataset</h3>
+      <div class="cnn-forward-steps cnn-split-steps">
+        {% for step in dataset_split_steps %}
+        <div class="cnn-forward-step">
+          <div class="cnn-forward-num">{{ step.step }}</div>
+          <div class="cnn-forward-body">
+            <strong>{{ step.title }}</strong>
+            <code class="cnn-formula">{{ step.formula }}</code>
+            <p>{{ step.detail }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <h3 class="cnn-subheading">Distribusi per Kelas (Data Aktual)</h3>
+      <div class="table-responsive cnn-table-wrap">
+        <table class="table cnn-class-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Kelas</th>
+              <th>Raw</th>
+              <th>Train</th>
+              <th>Val</th>
+              <th>Test</th>
+              <th>Total</th>
+              <th>% Train</th>
+              <th>% Val</th>
+              <th>% Test</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in class_rows %}
+            <tr>
+              <td>{{ row.index }}</td>
+              <td><strong>{{ row.display }}</strong><small class="d-block text-muted">{{ row.slug }}</small></td>
+              <td>{{ row.raw_count }}</td>
+              <td>{{ row.train_count }}</td>
+              <td>{{ row.validation_count }}</td>
+              <td>{{ row.test_count }}</td>
+              <td>{{ row.total_split }}</td>
+              <td>{{ row.split_train_pct }}%</td>
+              <td>{{ row.split_val_pct }}%</td>
+              <td>{{ row.split_test_pct }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="cnn-table-foot">
+              <td colspan="2"><strong>Total</strong></td>
+              <td>{{ dataset_totals.raw }}</td>
+              <td>{{ dataset_totals.train }}</td>
+              <td>{{ dataset_totals.validation }}</td>
+              <td>{{ dataset_totals.test }}</td>
+              <td>{{ dataset_totals.processed }}</td>
+              <td colspan="3">stratified per kelas</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="cnn-sample-grid">
+        {% for sample in samples_per_class %}
+        <div class="cnn-sample-card">
+          <div class="cnn-sample-thumb">
+            {% if sample.has_image %}
+            <img src="{{ url_for('dataset.serve_dataset_image', path=sample.path) }}" alt="Contoh {{ sample.display }}" loading="lazy">
+            {% else %}
+            <span class="cnn-sample-placeholder"><i class="bi bi-image"></i></span>
+            {% endif %}
+          </div>
+          <div class="cnn-sample-meta">
+            <strong>{{ sample.display }}</strong>
+            <small>{{ sample.filename }}</small>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {# ── 02 Class Weight ── #}
+  <section class="algo-card card cnn-section" id="sec-weights">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-sliders me-2"></i>02 · Perhitungan Class Weight</h2>
+    </div>
+    <div class="algo-card-body">
+      <p class="cnn-formula-note">
+        <strong>Rumus balanced weight:</strong> w<sub>i</sub> = N / (K × n<sub>i</sub>),
+        dengan N = {{ dataset_totals.train }} (total train), K = {{ num_classes }} kelas,
+        n<sub>i</sub> = jumlah sampel train kelas i. Bobot lebih besar diberikan ke kelas minoritas.
+      </p>
+      <div class="table-responsive cnn-table-wrap">
+        <table class="table cnn-class-table">
+          <thead>
+            <tr>
+              <th>Kelas</th>
+              <th>n<sub>i</sub> (train)</th>
+              <th>Perhitungan Manual</th>
+              <th>w<sub>i</sub> (sklearn)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in class_rows %}
+            <tr>
+              <td><strong>{{ row.display }}</strong></td>
+              <td>{{ row.train_count }}</td>
+              <td><code class="cnn-formula-inline">{{ row.weight_formula }}</code></td>
+              <td><code>{{ row.class_weight }}</code></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="cnn-lead mb-0">
+        Pada loss function: L<sub>weighted</sub> = −w<sub>true</sub> · Σ y<sub>true</sub> · log(ŷ).
+        Kelas dengan sampel train lebih sedikit mendapat bobot lebih tinggi
+        agar model tidak bias ke kelas mayoritas.
+      </p>
+    </div>
+  </section>
+
+  {# ── 03 Preprocessing ── #}
+  <section class="algo-card card cnn-section" id="sec-preprocess">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-sliders2 me-2"></i>03 · Preprocessing Citra (VGG16)</h2>
+    </div>
+    <div class="algo-card-body">
+      <p class="cnn-lead">Input standar: <strong>{{ preprocessing_detail.input_size }}</strong>. Preprocessing harus identik pada training dan inferensi.</p>
+      <div class="cnn-forward-steps">
+        {% for step in preprocessing_detail.steps %}
+        <div class="cnn-forward-step">
+          <div class="cnn-forward-num">{{ step.step }}</div>
+          <div class="cnn-forward-body">
+            <strong>{{ step.title }}</strong>
+            <code class="cnn-formula">{{ step.formula }}</code>
+            <p>{{ step.detail }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="cnn-formula-note mb-0">{{ preprocessing_detail.note }}</p>
+    </div>
+  </section>
+
+  {# ── 04 Arsitektur ── #}
+  <section class="algo-card card cnn-section" id="sec-architecture">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-boxes me-2"></i>04 · Arsitektur CNN VGG16 Transfer Learning</h2>
+    </div>
+    <div class="algo-card-body">
+      <p class="cnn-lead">
+        Model menggunakan backbone <strong>VGG16</strong> pre-trained ImageNet (~14.7M parameter) sebagai feature extractor.
+        Classifier head kustom (~395K parameter trainable di Fase 1) menghasilkan output softmax untuk {{ num_classes }} kelas.
+      </p>
+      <div class="cnn-layer-stack">
+        {% for layer in architecture_layers %}
+        <div class="cnn-layer-row">
+          <span class="cnn-layer-phase">{{ layer.phase }}</span>
+          <div class="cnn-layer-body">
+            <strong>{{ layer.name }}</strong>
+            <span>{{ layer.detail }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="cnn-glossary-grid mt-3">
+        {% for item in transfer_concepts %}
+        <div class="cnn-glossary-item">
+          <strong>{{ item.term }}</strong>
+          <p>{{ item.definition }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {# ── 05 Dimensi Konvolusi ── #}
+  <section class="algo-card card cnn-section" id="sec-conv-math">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-grid-3x3 me-2"></i>05 · Perhitungan Dimensi Feature Map VGG16</h2>
+    </div>
+    <div class="algo-card-body">
+      <p class="cnn-lead">
+        Setiap blok konvolusi VGG16 mempertahankan ukuran spatial dengan padding <code>same</code>,
+        lalu MaxPool 2×2 memperkecil H dan W menjadi setengahnya.
+        Rumus umum setelah MaxPool: H<sub>out</sub> = H<sub>in</sub> / 2.
+      </p>
+      <div class="table-responsive cnn-table-wrap">
+        <table class="table cnn-class-table">
+          <thead>
+            <tr>
+              <th>Blok</th>
+              <th>Operasi</th>
+              <th>Perhitungan Ukuran</th>
+              <th>Output Shape</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in spatial_dimensions %}
+            <tr>
+              <td><strong>{{ row.block }}</strong></td>
+              <td>{{ row.operation }}</td>
+              <td><code class="cnn-formula-inline">{{ row.formula }}</code></td>
+              <td><code>{{ row.output }}</code></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="cnn-formula-note mb-0">
+        Conv3×3 dengan padding same: output spatial = input spatial.
+        Jumlah parameter conv layer ≈ (k² × C_in × C_out) + C_out, dengan k=3.
+      </p>
+    </div>
+  </section>
+
+  {# ── 06 Parameter Model ── #}
+  <section class="algo-card card cnn-section" id="sec-params">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-diagram-3 me-2"></i>06 · Parameter Model (Frozen vs Trainable)</h2>
+    </div>
+    <div class="algo-card-body">
+      <div class="table-responsive cnn-table-wrap">
+        <table class="table cnn-class-table">
+          <thead>
+            <tr>
+              <th>Komponen</th>
+              <th>Parameter</th>
+              <th>Fase 1</th>
+              <th>Fase 2</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in parameter_breakdown.rows %}
+            <tr>
+              <td><strong>{{ row.component }}</strong></td>
+              <td>{{ row.params }}</td>
+              <td>{{ row.phase1 }}</td>
+              <td>{{ row.phase2 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="cnn-calc-box">
+        <h3>Rumus Parameter Dense Layer</h3>
+        <ul class="mb-0">
+          {% for f in parameter_breakdown.formulas %}
+          <li><code>{{ f }}</code></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  {# ── 07 Bentuk Tensor (ringkas) ── #}
+  <section class="algo-card card cnn-section" id="sec-tensors">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-braces me-2"></i>07 · Ringkasan Bentuk Tensor per Tahap</h2>
+    </div>
+    <div class="algo-card-body">
+      <p class="cnn-lead">Dimensi output setiap tahap untuk input citra {{ input_size }} dari dataset train/val/test.</p>
+      <div class="table-responsive cnn-table-wrap">
+        <table class="table cnn-class-table cnn-tensor-table">
+          <thead>
+            <tr>
+              <th>Tahap</th>
+              <th>Operasi</th>
+              <th>Bentuk Output</th>
+              <th>Parameter</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in tensor_pipeline %}
+            <tr>
+              <td><strong>{{ row.stage }}</strong></td>
+              <td>{{ row.operation }}</td>
+              <td><code>{{ row.shape }}</code></td>
+              <td>{{ row.params }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {# ── 08 Transfer Learning ── #}
+  <section class="algo-card card cnn-section" id="sec-transfer">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-arrow-repeat me-2"></i>08 · Dua Fase Transfer Learning</h2>
+    </div>
+    <div class="algo-card-body">
+      <div class="cnn-phase-grid">
+        {% for phase in transfer_phases %}
+        <div class="cnn-phase-card">
+          <div class="cnn-phase-head">
+            <span class="cnn-phase-num">Fase {{ phase.phase }}</span>
+            <h3>{{ phase.title }}</h3>
+          </div>
+          <ul class="cnn-phase-meta">
+            <li><span>Epoch</span><strong>{{ phase.epochs }}</strong></li>
+            <li><span>Learning Rate</span><strong>{{ phase.learning_rate }}</strong></li>
+            <li><span>Trainable</span><strong>{{ phase.trainable }}</strong></li>
+            <li><span>Loss</span><strong>{{ phase.loss }}</strong></li>
+            <li><span>Optimizer</span><strong>{{ phase.optimizer }}</strong></li>
+          </ul>
+          <p class="cnn-phase-desc">{{ phase.description }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {# ── 09 Iterasi Training ── #}
+  <section class="algo-card card cnn-section" id="sec-training-math">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-123 me-2"></i>09 · Perhitungan Iterasi Training &amp; Adam</h2>
+    </div>
+    <div class="algo-card-body">
+      <div class="cnn-math-grid">
+        <div class="cnn-math-card">
+          <span>Batch Size</span>
+          <strong>{{ training_math.batch_size }}</strong>
+        </div>
+        <div class="cnn-math-card">
+          <span>Sampel Train</span>
+          <strong>{{ training_math.train_samples }}</strong>
+        </div>
+        <div class="cnn-math-card">
+          <span>Sampel Validation</span>
+          <strong>{{ training_math.validation_samples }}</strong>
+        </div>
+        <div class="cnn-math-card">
+          <span>Sampel Test (holdout)</span>
+          <strong>{{ training_math.test_samples }}</strong>
+        </div>
+        <div class="cnn-math-card accent">
+          <span>Steps / Epoch (train)</span>
+          <strong>{{ training_math.steps_per_epoch_train }}</strong>
+        </div>
+        <div class="cnn-math-card accent">
+          <span>Steps / Epoch (val)</span>
+          <strong>{{ training_math.steps_per_epoch_val }}</strong>
+        </div>
+        <div class="cnn-math-card">
+          <span>Update Fase 1</span>
+          <strong>{{ training_math.weight_updates_phase1 }}</strong>
+        </div>
+        <div class="cnn-math-card">
+          <span>Update Fase 2</span>
+          <strong>{{ training_math.weight_updates_phase2 }}</strong>
+        </div>
+        <div class="cnn-math-card highlight">
+          <span>Total Update Bobot</span>
+          <strong>{{ training_math.total_weight_updates }}</strong>
+        </div>
+      </div>
+      <div class="cnn-calc-box">
+        <h3>Rumus Iterasi</h3>
+        <ul>
+          <li><code>{{ training_math.formula_steps }}</code></li>
+          <li><code>{{ training_math.samples_per_epoch }}</code></li>
+          <li><code>{{ training_math.formula_updates }}</code></li>
+        </ul>
+        <p class="mb-0 text-muted">
+          Fase 1: {{ training_math.phase1_epochs }} epoch × {{ training_math.steps_per_epoch_train }} steps =
+          {{ training_math.weight_updates_phase1 }} gradient descent.
+          Fase 2: {{ training_math.phase2_epochs }} epoch × {{ training_math.steps_per_epoch_train }} steps =
+          {{ training_math.weight_updates_phase2 }} gradient descent (dengan {{ fine_tune_layers }} layer VGG16 unfrozen).
+        </p>
+      </div>
+      <div class="cnn-optimizer-block">
+        <h3 class="cnn-subheading">Rumus Optimizer &amp; Update Bobot</h3>
+        <div class="cnn-optimizer-grid">
+          {% for item in adam_formulas %}
+          <article class="cnn-optimizer-card">
+            <div class="cnn-optimizer-card-head">
+              <span class="cnn-optimizer-step" aria-hidden="true">{{ loop.index }}</span>
+              <h4 class="cnn-optimizer-title">{{ item.title }}</h4>
+            </div>
+            <code class="cnn-optimizer-formula">{{ item.formula }}</code>
+            {% if item.detail %}
+            <p class="cnn-optimizer-detail">{{ item.detail }}</p>
+            {% endif %}
+          </article>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {# ── 10 Forward Pass ── #}
+  <section class="algo-card card cnn-section" id="sec-forward">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-calculator me-2"></i>10 · Alur Perhitungan CNN (Forward Pass)</h2>
+    </div>
+    <div class="algo-card-body">
+      <div class="cnn-forward-steps">
+        {% for step in forward_steps %}
+        <div class="cnn-forward-step">
+          <div class="cnn-forward-num">{{ step.step }}</div>
+          <div class="cnn-forward-body">
+            <strong>{{ step.title }}</strong>
+            <code class="cnn-formula">{{ step.formula }}</code>
+            <p>{{ step.detail }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="cnn-softmax-box">
+        <h3>Rumus Softmax &amp; Loss</h3>
+        <ul>
+          <li><code>{{ softmax_block.formula }}</code></li>
+          <li><code>{{ softmax_block.percent }}</code></li>
+          <li><code>{{ softmax_block.loss }}</code></li>
+        </ul>
+        <p class="mb-0 text-muted">{{ softmax_block.note }}</p>
+      </div>
+    </div>
+  </section>
+
+  {# ── 11 Loss & Softmax ── #}
+  <section class="algo-card card cnn-section" id="sec-softmax-example">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-percent me-2"></i>11 · Softmax, Loss &amp; Contoh Numerik</h2>
+    </div>
+    <div class="algo-card-body">
+      <h3 class="cnn-subheading">Contoh Perhitungan Softmax</h3>
+      <p class="cnn-lead">
+        Ilustrasi perhitungan probabilitas dari logit z<sub>i</sub> (output Dense sebelum softmax).
+        Prediksi: <strong>{{ softmax_example.predicted_class }}</strong>.
+      </p>
+      <p class="cnn-formula-note mb-3">
+        <code>{{ softmax_example.formula }}</code> · Penyebut: {{ softmax_example.calculation }}
+      </p>
+      <div class="table-responsive cnn-table-wrap">
+        <table class="table cnn-class-table">
+          <thead>
+            <tr>
+              <th>Kelas</th>
+              <th>Logit z<sub>i</sub></th>
+              <th>exp(z<sub>i</sub>)</th>
+              <th>P(kelas)</th>
+              <th>%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in softmax_example.rows %}
+            <tr{% if row.is_predicted %} class="cnn-row-predicted"{% endif %}>
+              <td><strong>{{ row.class }}</strong></td>
+              <td>{{ row.logit_z }}</td>
+              <td>{{ row.exp_z }}</td>
+              <td>{{ row.probability }}</td>
+              <td>{{ row.percent }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-muted mb-0" style="font-size:0.82rem">{{ softmax_example.note }}</p>
+
+      <h3 class="cnn-subheading mt-4">Contoh Categorical Crossentropy (Loss)</h3>
+      <p class="cnn-formula-note mb-3">
+        <code>{{ loss_example.formula }}</code> · {{ loss_example.calculation }}
+      </p>
+      <div class="table-responsive cnn-table-wrap">
+        <table class="table cnn-class-table">
+          <thead>
+            <tr>
+              <th>Kelas</th>
+              <th>y_true (one-hot)</th>
+              <th>ŷ (softmax)</th>
+              <th>−y·log(ŷ)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in loss_example.rows %}
+            <tr>
+              <td><strong>{{ row.class }}</strong></td>
+              <td>{{ row.y_true }}</td>
+              <td>{{ row.y_hat }}</td>
+              <td>{{ row.term }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="cnn-table-foot">
+              <td colspan="3"><strong>Total Loss L</strong></td>
+              <td><strong>{{ loss_example.loss }}</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="cnn-formula-note mb-0">{{ loss_example.weighted_note }}</p>
+    </div>
+  </section>
+
+  {# ── 12 Evaluasi Test ── #}
+  <section class="algo-card card cnn-section" id="sec-evaluation">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-clipboard-check me-2"></i>12 · Evaluasi &amp; Metrik ({{ dataset_totals.test }} gambar test)</h2>
+    </div>
+    <div class="algo-card-body">
+      <div class="cnn-calc-box mb-4">
+        <h3>Rumus Metrik Evaluasi</h3>
+        <div class="cnn-metric-formula-grid">
+          {% for block in metric_formulas.blocks %}
+          <div class="cnn-metric-formula-item">
+            <strong>{{ block.name }}</strong>
+            <code class="cnn-formula">{{ block.formula }}</code>
+            <p>{{ block.detail }}</p>
+            {% if block.example %}<p class="mb-0"><em>Contoh aktual:</em> <code>{{ block.example }}</code></p>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% if metric_formulas.per_class_examples %}
+        <h4 class="cnn-subheading-sm">Contoh per Kelas (Test Set)</h4>
+        <ul class="mb-0">
+          {% for ex in metric_formulas.per_class_examples %}
+          <li><strong>{{ ex.class }}:</strong> <code>{{ ex.class_accuracy }}</code>{% if ex.f1 %} · {{ ex.f1 }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% if evaluation_metrics.available %}
+      <div class="cnn-eval-summary">
+        <div class="cnn-eval-stat">
+          <span>Akurasi Test</span>
+          <strong>{{ evaluation_metrics.accuracy_pct }}%</strong>
+        </div>
+        <div class="cnn-eval-stat">
+          <span>Benar</span>
+          <strong>{{ evaluation_metrics.correct_predictions }} / {{ evaluation_metrics.test_samples }}</strong>
+        </div>
+        <div class="cnn-eval-stat">
+          <span>Salah</span>
+          <strong>{{ evaluation_metrics.incorrect_predictions }}</strong>
+        </div>
+        {% if evaluation_metrics.evaluated_at %}
+        <div class="cnn-eval-stat">
+          <span>Terakhir dievaluasi</span>
+          <strong>{{ evaluation_metrics.evaluated_at }}</strong>
+        </div>
+        {% endif %}
+      </div>
+      <p class="cnn-formula-note">
+        <code>{{ evaluation_metrics.accuracy_formula }}</code>
+      </p>
+      <h3 class="cnn-subheading">Metrik per Kelas (Test Holdout)</h3>
+      <div class="table-responsive cnn-table-wrap">
+        <table class="table cnn-class-table">
+          <thead>
+            <tr>
+              <th>Kelas</th>
+              <th>N Test</th>
+              <th>Benar</th>
+              <th>Akurasi Kelas</th>
+              <th>Precision</th>
+              <th>Recall</th>
+              <th>F1</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in evaluation_metrics.per_class_rows %}
+            <tr>
+              <td><strong>{{ row.display }}</strong></td>
+              <td>{{ row.test_count }}</td>
+              <td>{% if row.correct is not none %}{{ row.correct }}{% else %}—{% endif %}</td>
+              <td>{% if row.class_accuracy_pct is not none %}{{ row.class_accuracy_pct }}%{% else %}—{% endif %}</td>
+              <td>{% if row.precision_pct is not none %}{{ row.precision_pct }}%{% else %}—{% endif %}</td>
+              <td>{% if row.recall_pct is not none %}{{ row.recall_pct }}%{% else %}—{% endif %}</td>
+              <td>{% if row.f1_pct is not none %}{{ row.f1_pct }}%{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="cnn-info-banner">
+        <i class="bi bi-info-circle"></i>
+        <p class="mb-0">
+          Belum ada hasil evaluasi. Jalankan evaluasi pada
+          <a href="{{ evaluation_url }}">halaman Evaluasi Model</a> untuk menampilkan akurasi
+          pada {{ dataset_totals.test }} gambar test holdout.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ── 13 Ringkasan Training ── #}
+  <section class="algo-card card cnn-section" id="sec-training">
+    <div class="algo-card-head">
+      <h2 class="algo-card-title"><i class="bi bi-graph-up me-2"></i>13 · Ringkasan Training</h2>
+    </div>
+    <div class="algo-card-body">
+      {% if uses_external_model %}
+      <div class="cnn-info-banner mb-3">
+        <i class="bi bi-info-circle"></i>
+        <p class="mb-0">
+          Model aktif saat ini adalah <strong>model eksternal Keras H5</strong> (bukan hasil training VGG16 in-app).
+          Perhitungan arsitektur di atas menjelaskan pipeline VGG16 transfer learning standar sistem;
+          metrik evaluasi di bawah berasal dari model eksternal yang dievaluasi pada {{ dataset_totals.test }} gambar test holdout.
+        </p>
+      </div>
+      {% endif %}
+      <div class="cnn-training-grid">
+        <div><span>Mode Training</span><strong>{{ training_summary.training_mode }}</strong></div>
+        <div><span>Arsitektur Terlatih</span><strong>{{ training_summary.trained_architecture_label }}</strong></div>
+        <div><span>Tanggal Training</span><strong>{{ training_summary.training_date }}</strong></div>
+        <div><span>Batch Size</span><strong>{{ training_summary.batch_size }}</strong></div>
+        <div><span>Total Epoch</span><strong>{{ training_summary.epochs_total or '—' }}</strong></div>
+        <div><span>Fase 1 / Fase 2</span><strong>{{ training_summary.phase1_epochs or '—' }} / {{ training_summary.phase2_epochs or '—' }} epoch</strong></div>
+        <div><span>Best Val Accuracy</span><strong>{% if training_summary.best_val_accuracy %}{{ training_summary.best_val_accuracy }}%{% else %}—{% endif %}</strong></div>
+        <div><span>Test Accuracy</span><strong>{% if training_summary.test_accuracy %}{{ training_summary.test_accuracy }}%{% else %}—{% endif %}</strong></div>
+        <div><span>Target Riset</span><strong>{{ accuracy_target_pct }}%</strong></div>
+        <div><span>Class Weights</span><strong>{{ 'Aktif' if training_summary.class_weights_enabled else 'Nonaktif' }}</strong></div>
+        {% if training_summary.final_train_loss %}
+        <div><span>Final Train Loss</span><strong>{{ training_summary.final_train_loss }}</strong></div>
+        {% endif %}
+        {% if training_summary.final_val_loss %}
+        <div><span>Final Val Loss</span><strong>{{ training_summary.final_val_loss }}</strong></div>
+        {% endif %}
+      </div>
+      {% if training_summary.trained_architecture != 'vgg16' %}
+      <div class="cnn-info-banner">
+        <i class="bi bi-info-circle"></i>
+        <p class="mb-0">
+          Model terakhir dilatih dengan <strong>{{ training_summary.trained_architecture_label }}</strong>.
+          Untuk melatih VGG16, buka <a href="{{ model_management_url }}">Manajemen Model</a> dan pilih arsitektur <strong>VGG16</strong>.
+        </p>
+      </div>
+      {% endif %}
+      <p class="cnn-cta no-print">
+        <a href="{{ model_management_url }}" class="btn algo-btn-primary btn-sm"><i class="bi bi-play-fill me-1"></i>Mulai Training VGG16</a>
+        <a href="{{ evaluation_url }}" class="btn algo-btn-outline btn-sm"><i class="bi bi-clipboard-data me-1"></i>Evaluasi Model</a>
+      </p>
+    </div>
+  </section>
+
+  <footer class="algo-footer no-print">
+    <p>CNN VGG16 Transfer Learning · {{ num_classes }} kelas · {{ dataset_totals.processed }} gambar · Arabic Khat AI</p>
+    <a href="#cnnPageRoot" class="algo-back-top"><i class="bi bi-arrow-up"></i> Kembali ke atas</a>
+  </footer>
+</div>
+{% endblock %}

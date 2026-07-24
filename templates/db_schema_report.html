@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Database Schema Report{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="h3 mb-3">Database Relationship Report</h1>
+  <p class="text-muted">{{ report.summary }}</p>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <h2 class="h6">Relational Status</h2>
+          <p class="mb-0">{{ "Relational (FK enforced)" if report.is_relational else "Legacy flat schema" }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <h2 class="h6">Integrity</h2>
+          <p class="mb-0">{{ "OK" if integrity.integrity_ok else "Issues found" }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <h2 class="h6">Relational Tables</h2>
+          <p class="mb-0">{{ report.relational_tables_present|length }} / 8</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if report.issues %}
+  <div class="alert alert-warning">
+    <strong>Issues</strong>
+    <ul class="mb-0">
+      {% for issue in report.issues %}
+      <li>{{ issue }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <h2 class="h5 mt-4">Row Counts</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-striped">
+      <thead><tr><th>Table</th><th>Rows</th></tr></thead>
+      <tbody>
+        {% for name, count in report.row_counts.items() %}
+        <tr><td>{{ name }}</td><td>{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="h5 mt-4">Foreign Keys</h2>
+  {% for table, fks in report.foreign_keys.items() %}
+  <h3 class="h6">{{ table }}</h3>
+  {% if fks %}
+  <ul>
+    {% for fk in fks %}
+    <li><code>{{ fk.column }}</code> → {{ fk.references }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-muted">No foreign keys detected.</p>
+  {% endif %}
+  {% endfor %}
+
+  {% if integrity.integrity_checks %}
+  <h2 class="h5 mt-4">Integrity Checks</h2>
+  <ul>
+    {% for check in integrity.integrity_checks %}
+    <li>{{ check.name }}: {{ "OK" if check.ok else check.detail }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('db_admin.run_migration') }}" class="mt-4">
+    <button type="submit" class="btn btn-outline-primary btn-sm">Re-run safe relational migration</button>
+  </form>
+</div>
+{% endblock %}

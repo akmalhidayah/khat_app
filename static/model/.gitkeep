@@ -1,0 +1,8 @@
+# Place Teachable Machine model files here:
+# - model.json
+# - metadata.json
+# - weights.bin
+#
+# Run from project root:
+#   cp ~/Downloads/tm-my-image-model.zip .
+#   python3 scripts/setup_teachable_machine_model.py

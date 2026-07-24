@@ -1,0 +1,21 @@
+{
+  "class_indices": {
+    "diwani_jali": 0,
+    "tsuluts": 1,
+    "diwani": 2,
+    "naskhi": 3
+  },
+  "class_names": [
+    "diwani_jali",
+    "tsuluts",
+    "diwani",
+    "naskhi"
+  ],
+  "display_names": {
+    "diwani_jali": "Diwani Jali",
+    "tsuluts": "Tsuluts",
+    "diwani": "Diwani",
+    "naskhi": "Naskhi"
+  },
+  "source": "external_labels_txt"
+}

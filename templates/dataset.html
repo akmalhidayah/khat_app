@@ -1,0 +1,881 @@
+{% extends "base.html" %}
+{% block title %}Manajemen Dataset{% endblock %}
+{% block page_container_class %}page-container-compact dataset-page-container{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dataset.css') }}">
+{% endblock %}
+{% block content %}
+{% set class_labels_id = {'naskhi': 'Naskhi', 'diwani': 'Diwani', 'diwani_jali': 'Diwani Jali', 'tsuluts': 'Tsuluts'} %}
+{% set opt_open = not optimization_summary.is_complete or optimization_summary.is_running or optimization_summary.needs_full_run %}
+{% set has_active_filters = selected_class or search_query or format_filter or source_filter %}
+
+<div class="ds-v2">
+
+  {# ── Hero + actions ── #}
+  <section class="ds-v2-hero" aria-label="Dataset workspace">
+    <div class="ds-v2-hero-main">
+      <p class="ds-v2-eyebrow">Dataset Workspace</p>
+      <h1 class="ds-v2-title">Manajemen Dataset</h1>
+      <p class="ds-v2-subtitle">Kelola, siapkan, audit, dan tinjau dataset gambar Khat Arab untuk training dan evaluasi model.</p>
+    </div>
+    <div class="ds-v2-hero-meta">
+      {% if global_is_teachable_machine %}
+      <span class="ds-v2-hero-chip model"><i class="bi bi-cpu" aria-hidden="true"></i>Teachable Machine</span>
+      {% endif %}
+      <span class="ds-v2-hero-chip {{ 'ok' if dataset_status.badge == 'ready' else 'warn' }}">
+        <i class="bi bi-flag" aria-hidden="true"></i>{{ dataset_status.state_id or dataset_status.state }}
+      </span>
+      <span class="ds-v2-hero-chip {{ page_insights.quality_tone }}">
+        <i class="bi bi-pie-chart" aria-hidden="true"></i>{{ page_insights.quality_label }}
+      </span>
+    </div>
+    <div class="ds-v2-hero-actions">
+      <a href="{{ url_for('dataset.upload_dataset') }}" class="btn ds-v2-btn-primary btn-sm">
+        <i class="bi bi-upload me-1" aria-hidden="true"></i>Unggah Dataset
+      </a>
+      <button type="button" class="btn ds-v2-btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#splitConfirmModal">
+        <i class="bi bi-diagram-3 me-1" aria-hidden="true"></i>Proses &amp; Bagi Dataset
+      </button>
+      <button type="button" class="btn ds-v2-btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#optimizeConfirmModal" id="optimizeImagesBtn" {% if optimization_running %}disabled{% endif %}>
+        <i class="bi bi-lightning-charge me-1" aria-hidden="true"></i>Optimasi Gambar
+      </button>
+      <a href="{{ url_for('dataset.list_dataset') }}" class="btn ds-v2-btn-ghost btn-sm" title="Refresh" aria-label="Refresh">
+        <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+      </a>
+    </div>
+  </section>
+
+  {% if workflow and workflow.imported and not workflow.split %}
+  <div class="ds-v2-alert ds-v2-alert-info">
+    <i class="bi bi-info-circle"></i>
+    Dataset berisi <strong>{{ total_images or 0 }}</strong> gambar mentah
+    {% if dataset_inventory and dataset_inventory.processed_total %}
+      dan <strong>{{ dataset_inventory.processed_total }}</strong> gambar pada split train/validation/test
+    {% endif %}
+    di <code>{{ dataset_inventory.dataset_root if dataset_inventory else 'folder dataset' }}</code>.
+    {% if not workflow.split %}Klik <strong>Proses &amp; Bagi Dataset</strong> jika folder split belum siap.{% endif %}
+  </div>
+  {% endif %}
+
+  {% if orphaned_count and orphaned_count > 0 %}
+  <div class="ds-v2-alert ds-v2-alert-warn">
+    <div class="ds-v2-alert-row">
+      <span><i class="bi bi-exclamation-triangle me-1"></i><strong>{{ orphaned_count }}</strong> record menunjuk ke file yang hilang.</span>
+      <form method="post" action="{{ url_for('dataset.cleanup_orphan_records') }}" class="d-inline">
+        <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Hapus semua record dataset yang orphan?')">Hapus Record Orphan</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ── KPI summary ── #}
+  <section class="ds-v2-grid ds-v2-grid-4 ds-v2-section" aria-label="Ringkasan dataset">
+    <div class="ds-v2-stat accent-teal">
+      <div class="ds-v2-stat-icon" aria-hidden="true"><i class="bi bi-images"></i></div>
+      <div class="ds-v2-stat-value">{{ total_images or 0 }}</div>
+      <div class="ds-v2-stat-label">Total Gambar</div>
+      <div class="ds-v2-stat-desc">{{ total_classes or 0 }} kelas · {{ total_images or 0 }} gambar sumber</div>
+    </div>
+    <div class="ds-v2-stat accent-blue">
+      <div class="ds-v2-stat-icon" aria-hidden="true"><i class="bi bi-grid-3x3-gap"></i></div>
+      <div class="ds-v2-stat-value">{{ total_classes or 0 }}</div>
+      <div class="ds-v2-stat-label">Total Kelas</div>
+      <div class="ds-v2-stat-desc">Kelas kaligrafi aktif</div>
+    </div>
+    <div class="ds-v2-stat accent-indigo">
+      <div class="ds-v2-stat-icon" aria-hidden="true"><i class="bi bi-check2-square"></i></div>
+      <div class="ds-v2-stat-value">{{ processed_images or 0 }}</div>
+      <div class="ds-v2-stat-label">Gambar Diproses</div>
+      <div class="ds-v2-stat-desc">Train {{ dataset_inventory.train if dataset_inventory else 0 }} · Val {{ dataset_inventory.validation if dataset_inventory else 0 }} · Test {{ dataset_inventory.test if dataset_inventory else 0 }}</div>
+    </div>
+    <div class="ds-v2-stat accent-status">
+      <div class="ds-v2-stat-icon" aria-hidden="true"><i class="bi bi-flag"></i></div>
+      <div class="ds-v2-stat-value ds-v2-stat-badge-wrap">
+        <span class="status-badge {{ dataset_status.badge }}">{{ dataset_status.state_id or dataset_status.state }}</span>
+      </div>
+      <div class="ds-v2-stat-label">Status Dataset</div>
+      <div class="ds-v2-stat-desc">Kesiapan training</div>
+    </div>
+  </section>
+
+  {# ── Insight summary ── #}
+  <section class="ds-v2-insight-card ds-v2-section" aria-label="Insight dataset">
+    <div class="ds-v2-insight-head">
+      <span class="ds-v2-card-icon" aria-hidden="true"><i class="bi bi-lightbulb"></i></span>
+      <div>
+        <strong>Insight Dataset</strong>
+        <small>Ringkasan inteligent untuk monitoring penelitian</small>
+      </div>
+    </div>
+    <div class="ds-v2-insight-grid">
+      <div class="ds-v2-insight-item tone-{{ page_insights.quality_tone }}">
+        <span>Distribusi</span>
+        <strong>{% if page_insights.is_imbalanced %}Belum seimbang{% else %}Seimbang{% endif %}</strong>
+      </div>
+      <div class="ds-v2-insight-item tone-warn">
+        <span>Kelas Minoritas</span>
+        <strong>{{ page_insights.minority_classes | join(', ') or '—' }}</strong>
+      </div>
+      <div class="ds-v2-insight-item tone-info">
+        <span>Kelas Dominan</span>
+        <strong>{{ page_insights.dominant_classes | join(', ') or '—' }}</strong>
+      </div>
+      <div class="ds-v2-insight-item tone-{{ 'danger' if page_insights.missing_files else 'success' }}">
+        <span>Missing / Duplicate</span>
+        <strong>{{ page_insights.missing_files }} / {{ page_insights.duplicate_filenames }}</strong>
+      </div>
+      <div class="ds-v2-insight-item tone-{{ page_insights.readiness_tone }}">
+        <span>Readiness</span>
+        <strong>{{ page_insights.readiness }}</strong>
+      </div>
+      <div class="ds-v2-insight-item tone-info wide">
+        <span>Rekomendasi</span>
+        <strong>{{ page_insights.primary_recommendation }}</strong>
+      </div>
+    </div>
+  </section>
+  {# ── Filter + preparation status ── #}
+  <section class="ds-v2-grid ds-v2-grid-2 ds-v2-section align-start">
+    <div class="ds-v2-card">
+      <div class="ds-v2-card-head">
+        <div class="ds-v2-card-head-text">
+          <span class="ds-v2-card-icon" aria-hidden="true"><i class="bi bi-funnel"></i></span>
+          <div><strong>Filter Dataset</strong><small>Percepat pencarian dataset</small></div>
+        </div>
+      </div>
+      <div class="ds-v2-card-body">
+        <p class="ds-v2-filter-hint">Gunakan filter untuk mempercepat pencarian dataset.</p>
+        <form class="ds-v2-filter-form" method="get" action="{{ url_for('dataset.list_dataset') }}">
+          <div class="ds-v2-filter-grid">
+            <div class="ds-v2-search-wrap">
+              <label class="form-label">Cari Nama File</label>
+              <div class="ds-v2-input-icon">
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="Nama file..." value="{{ search_query or '' }}">
+              </div>
+            </div>
+            <div>
+              <label class="form-label">Pilih Kelas</label>
+              <select class="form-select form-select-sm" name="class_name">
+                <option value="">Semua kelas</option>
+                {% for class_name in class_labels %}
+                <option value="{{ class_name }}" {% if selected_class == class_name %}selected{% endif %}>{{ class_labels_id.get(class_name, class_name.replace('_', ' ').title()) }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Format</label>
+              <select class="form-select form-select-sm" name="format">
+                <option value="">Semua</option>
+                {% for fmt in ['JPG', 'JPEG', 'PNG', 'WEBP'] %}
+                <option value="{{ fmt }}" {% if format_filter == fmt %}selected{% endif %}>{{ fmt }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Sumber</label>
+              <select class="form-select form-select-sm" name="source">
+                <option value="">Semua</option>
+                <option value="imported" {% if source_filter == 'imported' %}selected{% endif %}>Imported</option>
+                <option value="uploaded" {% if source_filter == 'uploaded' %}selected{% endif %}>Uploaded</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Per Halaman</label>
+              <select class="form-select form-select-sm" name="per_page">
+                {% for n in [10, 25, 50, 100] %}
+                <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="ds-v2-filter-actions">
+            <button type="submit" class="btn ds-v2-btn-primary btn-sm"><i class="bi bi-funnel me-1" aria-hidden="true"></i>Filter</button>
+            <a href="{{ url_for('dataset.list_dataset') }}" class="btn ds-v2-btn-secondary btn-sm">Reset</a>
+          </div>
+        </form>
+        {% if has_active_filters %}
+        <div class="ds-v2-filter-chips">
+          {% if selected_class %}<span class="ds-v2-chip active">Kelas: {{ class_labels_id.get(selected_class, selected_class) }}</span>{% endif %}
+          {% if format_filter %}<span class="ds-v2-chip active">Format: {{ format_filter }}</span>{% endif %}
+          {% if source_filter %}<span class="ds-v2-chip active">Sumber: {{ source_filter|title }}</span>{% endif %}
+          {% if search_query %}<span class="ds-v2-chip active">Cari: {{ search_query }}</span>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="ds-v2-card">
+      <div class="ds-v2-card-head">
+        <div class="ds-v2-card-head-text">
+          <span class="ds-v2-card-icon" aria-hidden="true"><i class="bi bi-clipboard-data"></i></span>
+          <div><strong>Status Persiapan Dataset</strong><small>Pipeline preprocessing &amp; split</small></div>
+        </div>
+        <span class="status-badge {{ prep_status.badge if prep_status else 'empty' }}">{{ prep_status.state_id if prep_status and prep_status.state_id else (prep_status.state if prep_status else '—') }}</span>
+      </div>
+      <div class="ds-v2-card-body ds-v2-prep-body">
+        {% if prep_status and prep_status.status_message %}
+        <p class="ds-v2-prep-status-msg">{{ prep_status.status_message }}</p>
+        {% endif %}
+
+        {% if prep_status %}
+        <div class="ds-v2-prep-hero">
+          <div class="ds-v2-prep-hero-head">
+            <span class="ds-v2-prep-hero-label">Progress pemrosesan</span>
+            <strong class="ds-v2-prep-hero-pct">{{ prep_status.progress or 0 }}%</strong>
+          </div>
+          <div class="progress ds-v2-prep-bar" role="progressbar" aria-valuenow="{{ prep_status.progress or 0 }}" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar ds-v2-prep-bar-{{ prep_status.progress_bar_tone or 'warning' }}" style="width: {{ prep_status.progress or 0 }}%"></div>
+          </div>
+          {% if prep_status.split_ratio %}
+          <div class="ds-v2-prep-split-badges">
+            <span class="ds-v2-prep-split-badge train"><i class="bi bi-collection" aria-hidden="true"></i> Train {{ prep_status.split_ratio.train }}%</span>
+            <span class="ds-v2-prep-split-badge val"><i class="bi bi-sliders" aria-hidden="true"></i> Val {{ prep_status.split_ratio.validation }}%</span>
+            <span class="ds-v2-prep-split-badge test"><i class="bi bi-clipboard-check" aria-hidden="true"></i> Test {{ prep_status.split_ratio.test }}%</span>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="ds-v2-prep-group">
+          <h6 class="ds-v2-prep-group-title"><i class="bi bi-hdd-stack" aria-hidden="true"></i> Sumber Data</h6>
+          <div class="ds-v2-prep-grid">
+            <div class="ds-v2-prep-metric">
+              <span class="ds-v2-prep-metric-label">Raw Images</span>
+              <strong class="ds-v2-prep-metric-value">{{ prep_status.raw if prep_status else 0 }}</strong>
+            </div>
+            <div class="ds-v2-prep-metric">
+              <span class="ds-v2-prep-metric-label">Processed</span>
+              <strong class="ds-v2-prep-metric-value">{{ prep_status.processed_images if prep_status else 0 }}</strong>
+            </div>
+            <div class="ds-v2-prep-metric{% if prep_status and prep_status.unprocessed > 0 %} is-warn{% endif %}">
+              <span class="ds-v2-prep-metric-label">
+                Unprocessed
+                <button type="button" class="ds-v2-info-tip" data-bs-toggle="tooltip" data-bs-placement="top" title="Selisih antara gambar raw dan processed. Gambar dapat tidak masuk processed karena gagal dibaca, format tidak sesuai, duplikat, resolusi bermasalah, atau dikecualikan saat cleaning." aria-label="Info unprocessed images">
+                  <i class="bi bi-info-circle" aria-hidden="true"></i>
+                </button>
+              </span>
+              <strong class="ds-v2-prep-metric-value{% if prep_status and prep_status.unprocessed > 0 %} is-warn{% endif %}">{{ prep_status.unprocessed if prep_status else 0 }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="ds-v2-prep-group">
+          <h6 class="ds-v2-prep-group-title"><i class="bi bi-diagram-3" aria-hidden="true"></i> Split Dataset</h6>
+          <div class="ds-v2-prep-split-grid">
+            <div class="ds-v2-prep-split-card train">
+              <span class="ds-v2-prep-split-label">Train</span>
+              <strong class="ds-v2-prep-split-value">{{ prep_status.train if prep_status else 0 }}</strong>
+            </div>
+            <div class="ds-v2-prep-split-card val">
+              <span class="ds-v2-prep-split-label">Validation</span>
+              <strong class="ds-v2-prep-split-value">{{ prep_status.validation if prep_status else 0 }}</strong>
+            </div>
+            <div class="ds-v2-prep-split-card test">
+              <span class="ds-v2-prep-split-label">Test</span>
+              <strong class="ds-v2-prep-split-value">{{ prep_status.test if prep_status else 0 }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="ds-v2-prep-group ds-v2-prep-group-muted">
+          <h6 class="ds-v2-prep-group-title"><i class="bi bi-image" aria-hidden="true"></i> Optimasi &amp; Kompresi</h6>
+          <div class="ds-v2-prep-grid ds-v2-prep-grid-2">
+            <div class="ds-v2-prep-metric is-compact">
+              <span class="ds-v2-prep-metric-label">Optimized</span>
+              <strong class="ds-v2-prep-metric-value">{{ prep_status.optimized_images if prep_status else 0 }}</strong>
+            </div>
+            <div class="ds-v2-prep-metric is-compact">
+              <span class="ds-v2-prep-metric-label">Model-Ready</span>
+              <strong class="ds-v2-prep-metric-value">{{ prep_status.model_ready_images if prep_status else 0 }}</strong>
+            </div>
+            <div class="ds-v2-prep-metric is-compact">
+              <span class="ds-v2-prep-metric-label">Storage Saved</span>
+              <strong class="ds-v2-prep-metric-value">{{ prep_status.storage_saved_mb if prep_status else 0 }} MB</strong>
+            </div>
+            <div class="ds-v2-prep-metric is-compact">
+              <span class="ds-v2-prep-metric-label">Compression</span>
+              <strong class="ds-v2-prep-metric-value">{{ prep_status.compression_ratio if prep_status else 0 }}%</strong>
+            </div>
+          </div>
+          <p class="ds-v2-prep-meta-line">
+            <span>Status kompresi: <strong>{{ prep_status.compression_status or '—' }}</strong></span>
+            <span class="ds-v2-prep-meta-sep" aria-hidden="true">·</span>
+            <span>Terakhir dioptimasi: <strong>{{ prep_status.last_optimization_date if prep_status else '—' }}</strong></span>
+          </p>
+        </div>
+
+        {% if prep_status and prep_status.warning_message %}
+        <div class="ds-v2-prep-alert ds-v2-prep-alert-{{ prep_status.warning_tone or 'info' }}" role="status">
+          <i class="bi {% if prep_status.warning_tone == 'success' %}bi-check-circle{% else %}bi-info-circle{% endif %}" aria-hidden="true"></i>
+          <p class="mb-0">
+            {% if prep_status.unprocessed > 0 and prep_status.warning_emphasis %}
+            {% if prep_status.warning_lead %}{{ prep_status.warning_lead }} {% endif %}<strong>{{ prep_status.warning_emphasis }}</strong> {{ prep_status.warning_trail }}
+            {% else %}
+            {{ prep_status.warning_message }}
+            {% endif %}
+          </p>
+        </div>
+        {% endif %}
+        {% if prep_status and prep_status.show_recommendation and prep_status.recommendation %}
+        <div class="ds-v2-prep-recommendation" role="note">
+          <span class="ds-v2-prep-recommendation-label">Rekomendasi</span>
+          <p class="mb-0">{{ prep_status.recommendation }}</p>
+        </div>
+        {% endif %}
+        {% if prep_status and prep_status.process_report and prep_status.raw > 0 %}
+        <details class="ds-v2-details ds-v2-prep-details">
+          <summary class="ds-v2-details-summary"><i class="bi bi-journal-text me-1" aria-hidden="true"></i>Lihat Detail Proses</summary>
+          <div class="ds-v2-details-body small">
+            <div class="ds-v2-process-report-grid">
+              <div><span>Total Raw</span><strong>{{ prep_status.process_report.raw_total }}</strong></div>
+              <div><span>Total Processed</span><strong>{{ prep_status.process_report.processed_total }}</strong></div>
+              <div><span>Unprocessed</span><strong>{{ prep_status.process_report.unprocessed_total }}</strong></div>
+              <div><span>Skipped</span><strong>{{ prep_status.process_report.skipped }}</strong></div>
+              <div><span>Corrupted</span><strong>{{ prep_status.process_report.corrupted }}</strong></div>
+              <div><span>Duplicate</span><strong>{{ prep_status.process_report.duplicate }}</strong></div>
+              <div><span>Excluded</span><strong>{{ prep_status.process_report.excluded }}</strong></div>
+              <div><span>Processing Date</span><strong>{{ prep_status.process_report.processing_date }}</strong></div>
+              {% if upload_report %}
+              <div><span>Optimized</span><strong>{{ upload_report.optimized or 0 }}</strong></div>
+              <div><span>Model-Ready</span><strong>{{ upload_report.model_ready or 0 }}</strong></div>
+              <div><span>Storage Saved</span><strong>{{ upload_report.saved_mb or 0 }} MB</strong></div>
+              <div><span>Compression</span><strong>{{ upload_report.compression_ratio or 0 }}%</strong></div>
+              {% endif %}
+            </div>
+            {% if split_report and split_report.splits %}
+            <p class="mb-1 mt-2">Rasio split: {{ split_report.split_ratio or '80/20 (test holdout)' }}{% if split_report.effective_ratio %} · {{ split_report.effective_ratio }}{% endif %} (stratified)</p>
+            {% if split_report.evaluation_policy %}<p class="mb-1 text-muted">{{ split_report.evaluation_policy }}</p>{% endif %}
+            <ul class="mb-2">
+              {% for split_name, info in split_report.splits.items() %}
+              <li>{{ split_name|title }}: {{ info.total }} gambar</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
+            {% if prep_status.process_report.notes %}
+            <div class="ds-v2-process-notes">
+              <span class="ds-v2-process-notes-label">Catatan proses</span>
+              <ul class="mb-0">
+                {% for note in prep_status.process_report.notes %}
+                <li>{{ note }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          </div>
+        </details>
+        {% elif prep_status and prep_status.raw > 0 and prep_status.processed == 0 %}
+        <p class="ds-v2-hint mt-2 mb-0">Perkiraan setelah proses: {{ prep_status.estimated_split.train }} train · {{ prep_status.estimated_split.validation }} val · {{ prep_status.estimated_split.test }} test</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  {# ── Distribution ── #}
+  <section class="ds-v2-card ds-v2-section">
+    <div class="ds-v2-card-head">
+      <div class="ds-v2-card-head-text">
+        <span class="ds-v2-card-icon" aria-hidden="true"><i class="bi bi-bar-chart"></i></span>
+        <div><strong>Distribusi Dataset</strong><small>Per kelas kaligrafi</small></div>
+      </div>
+      {% if page_insights.is_imbalanced %}
+      <span class="ds-v2-priority-badge">Prioritas: {{ page_insights.priority_addition }}</span>
+      {% endif %}
+    </div>
+    <div class="ds-v2-card-body">
+      {% if total_images and total_images > 0 %}
+      <div class="ds-v2-balance-list">
+        {% for row in balance %}
+        <div class="ds-v2-balance-row">
+          <div class="ds-v2-balance-label">
+            <span class="class-pill sm {{ row.label }}">{{ class_labels_id.get(row.label, row.label.replace('_', ' ').title()) }}</span>
+          </div>
+          <div class="ds-v2-balance-bar-wrap">
+            <div class="progress ds-v2-balance-bar mb-0">
+              <div class="progress-bar class-bar-{{ row.label }}" style="width: {{ row.percent }}%"></div>
+            </div>
+          </div>
+          <div class="ds-v2-balance-meta">
+            <strong>{{ row.count }}</strong>
+            <span>{{ row.percent }}%</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="ds-v2-dist-total mb-0 mt-2">{{ total_images }} gambar · {{ total_classes }} kelas aktif</p>
+      {% if page_insights.is_imbalanced %}
+      <div class="ds-v2-balance-alert mt-2 mb-0" role="alert">
+        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+        <span>Dataset tidak seimbang. Class weights disarankan saat training.</span>
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="empty-state-dataset compact">
+        <i class="bi bi-inbox" aria-hidden="true"></i>
+        <p class="mb-0">Unggah dataset untuk melihat distribusi kelas.</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if qc_report %}
+  {% include "includes/dataset_qc_panel.html" %}
+  {% endif %}
+
+  {# ── Image list ── #}
+  <section class="ds-v2-card ds-v2-section" id="dataset-image-list">
+    <div class="ds-v2-card-head">
+      <div class="ds-v2-card-head-text">
+        <span class="ds-v2-card-icon" aria-hidden="true"><i class="bi bi-table"></i></span>
+        <div><strong>Daftar Gambar Dataset</strong><small>Pratinjau dan kelola gambar</small></div>
+      </div>
+      {% if pagination and pagination.total > 0 %}
+      <span class="meta-pill">{{ pagination.total }} record</span>
+      {% endif %}
+    </div>
+    {% if pagination and pagination.total > 0 %}
+    <div class="ds-v2-table-toolbar">
+      <span><strong>{{ pagination.total }}</strong> total record{% if has_active_filters %} · hasil filter{% endif %}</span>
+      {% if pagination.pages > 1 %}
+      <span>Halaman {{ pagination.page }} / {{ pagination.pages }}</span>
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="ds-v2-card-body ds-v2-table-wrap">
+      {% if items %}
+      <table class="table table-sm align-middle dataset-table ds-v2-table" id="datasetTable">
+        <thead>
+          <tr>
+            <th>Gambar</th>
+            <th>Kelas</th>
+            <th>Nama File</th>
+            <th>Format</th>
+            <th>Ukuran</th>
+            <th>Sumber</th>
+            <th>Tanggal</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in items %}
+          {% set item = row.item %}
+          {% set cls = row.class_name or 'unknown' %}
+          <tr class="ds-v2-table-row {% if row.is_orphan %}row-missing-file{% endif %}">
+            <td>
+              <button type="button" class="thumb-btn view-image-btn" title="Lihat"
+                      data-id="{{ row.id }}"
+                      data-image-url="{{ row.image_url }}"
+                      data-filename="{{ row.filename }}"
+                      data-class="{{ class_labels_id.get(cls, cls.replace('_', ' ').title()) }}"
+                      data-class-key="{{ cls }}"
+                      data-format="{{ row.format }}"
+                      data-size="{{ row.dimensions }}"
+                      data-filesize="{{ row.file_size_display or '-' }}"
+                      data-source="{{ row.source }}"
+                      data-date="{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '-' }}"
+                      data-exists="{{ '1' if row.file_exists else '0' }}"
+                      data-preview-source="{{ row.preview_source }}"
+                      data-path="{{ row.image_path }}"
+                      {% if debug_mode and row.debug_info %}data-resolved="{{ row.debug_info.serving_path or '' }}" data-debug="{{ row.debug_info | tojson }}"{% endif %}>
+                <img src="{{ row.image_url }}"
+                     class="dataset-thumb ds-v2-thumb {% if row.is_orphan %}is-missing{% endif %}"
+                     alt="{{ row.filename }}"
+                     loading="lazy"
+                     data-placeholder="{{ placeholder_url }}"
+                     onerror="window.datasetThumbError && window.datasetThumbError(this)">
+              </button>
+              {% if row.is_orphan %}
+              <span class="missing-badge">Missing</span>
+              {% endif %}
+            </td>
+            <td><span class="class-pill {{ cls }}">{{ class_labels_id.get(cls, cls.replace('_', ' ').title()) }}</span></td>
+            <td class="filename-cell" title="{{ row.filename }}">
+              <div class="fw-semibold text-truncate-custom">{{ row.filename }}</div>
+            </td>
+            <td><span class="meta-pill">{{ row.format }}</span></td>
+            <td>
+              <span class="meta-pill">{{ row.dimensions }}</span>
+              {% if row.file_size_display %}<small class="text-muted d-block">{{ row.file_size_display }}</small>{% endif %}
+            </td>
+            <td><span class="source-pill {{ row.source|lower }}">{{ row.source }}</span></td>
+            <td><small class="text-muted">{{ row.created_at.strftime('%Y-%m-%d') if row.created_at else '-' }}</small></td>
+            <td>
+              <div class="table-actions">
+                <button type="button" class="btn btn-sm btn-outline-primary view-image-btn" title="Lihat"
+                        data-id="{{ row.id }}"
+                        data-image-url="{{ row.image_url }}"
+                        data-filename="{{ row.filename }}"
+                        data-class="{{ class_labels_id.get(cls, cls.replace('_', ' ').title()) }}"
+                        data-class-key="{{ cls }}"
+                        data-format="{{ row.format }}"
+                        data-size="{{ row.dimensions }}"
+                        data-filesize="{{ row.file_size_display or '-' }}"
+                        data-source="{{ row.source }}"
+                        data-date="{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '-' }}"
+                        data-exists="{{ '1' if row.file_exists else '0' }}"
+                        data-preview-source="{{ row.preview_source }}"
+                        data-path="{{ row.image_path }}">
+                  <i class="bi bi-eye"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger delete-image-btn" title="Hapus"
+                        data-id="{{ row.id }}"
+                        data-filename="{{ row.filename }}"
+                        data-class="{{ class_labels_id.get(cls, cls.replace('_', ' ').title()) }}"
+                        data-class-key="{{ cls }}">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+
+      {% if pagination and pagination.pages > 1 %}
+      <nav class="dataset-pagination ds-v2-pagination" aria-label="Pagination">
+        <ul class="pagination pagination-sm mb-0 flex-wrap">
+          <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('dataset.list_dataset', page=pagination.prev_num, class_name=selected_class, search=search_query, format=format_filter, source=source_filter, per_page=per_page) if pagination.has_prev else '#' }}"><i class="bi bi-chevron-left"></i> Sebelumnya</a>
+          </li>
+          {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+            {% if p %}
+            <li class="page-item {% if p == pagination.page %}active{% endif %}">
+              <a class="page-link" href="{{ url_for('dataset.list_dataset', page=p, class_name=selected_class, search=search_query, format=format_filter, source=source_filter, per_page=per_page) }}">{{ p }}</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+          {% endfor %}
+          <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('dataset.list_dataset', page=pagination.next_num, class_name=selected_class, search=search_query, format=format_filter, source=source_filter, per_page=per_page) if pagination.has_next else '#' }}">Selanjutnya <i class="bi bi-chevron-right"></i></a>
+          </li>
+        </ul>
+        <small class="text-muted">{{ pagination.total }} record · hal {{ pagination.page }}/{{ pagination.pages }}</small>
+      </nav>
+      {% endif %}
+      {% else %}
+      <div class="empty-state-dataset">
+        <div class="icon"><i class="bi bi-image"></i></div>
+        <h5>Tidak ada gambar</h5>
+        <p>{% if has_active_filters %}Tidak ada hasil untuk filter ini.{% else %}Mulai dengan mengunggah gambar kaligrafi Arab.{% endif %}</p>
+        <a href="{{ url_for('dataset.upload_dataset') }}" class="btn btn-emerald btn-sm"><i class="bi bi-upload me-1"></i>Unggah Dataset</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ── Secondary tools (accordion) ── #}
+  <section class="ds-v2-accordion ds-v2-section">
+
+    <details class="ds-v2-acc" {% if opt_open %}open{% endif %}>
+      <summary class="ds-v2-acc-head">
+        <span><i class="bi bi-lightning-charge"></i> Optimasi Gambar</span>
+        <span class="status-badge {% if optimization_summary.is_complete %}ready{% elif optimization_running %}pending{% else %}empty{% endif %}">{{ optimization_summary.status_label_id }}</span>
+      </summary>
+      <div class="ds-v2-acc-body">
+        <p class="ds-v2-tool-intro">Optimasi digunakan untuk menstandarkan ukuran dan efisiensi penyimpanan dataset.</p>
+        <div id="optimizationProgressPanel" class="optimization-progress-panel {% if not optimization_running and not optimization_summary.is_running %}d-none{% endif %}">
+          <div class="d-flex justify-content-between mb-1">
+            <small class="text-muted" id="optimizationProgressMessage">{{ optimization_status.message if optimization_status else 'Optimizing...' }}</small>
+            <small class="text-muted" id="optimizationProgressPercent">{{ optimization_status.progress if optimization_status else 0 }}%</small>
+          </div>
+          <div class="progress prep-progress">
+            <div class="progress-bar bg-emerald" id="optimizationProgressBar" style="width: {{ optimization_status.progress if optimization_status else 0 }}%"></div>
+          </div>
+          <small class="text-muted d-block mt-1" id="optimizationProgressCount">
+            {{ optimization_status.processed if optimization_status else 0 }} / {{ optimization_status.total if optimization_status else 0 }} gambar
+          </small>
+        </div>
+
+        <div class="optimization-stats-grid">
+          <div class="opt-stat"><span>Total Discan</span><strong>{{ optimization_summary.total_scanned }}</strong></div>
+          <div class="opt-stat"><span>Dioptimasi</span><strong>{{ optimization_summary.optimized }}</strong></div>
+          <div class="opt-stat"><span>Dilewati</span><strong>{{ optimization_summary.skipped }}</strong></div>
+          <div class="opt-stat"><span>Hilang</span><strong>{{ optimization_summary.missing }}</strong></div>
+          <div class="opt-stat"><span>Ukuran Asli</span><strong>{% if optimization_summary.original_size_mb is not none %}{{ optimization_summary.original_size_mb }} MB{% else %}—{% endif %}</strong></div>
+          <div class="opt-stat"><span>Ukuran Optimal</span><strong>{% if optimization_summary.optimized_size_mb is not none %}{{ optimization_summary.optimized_size_mb }} MB{% else %}—{% endif %}</strong></div>
+          <div class="opt-stat"><span>Hemat</span><strong class="text-success">{% if optimization_summary.saved_mb is not none %}{{ optimization_summary.saved_mb }} MB{% else %}—{% endif %}</strong></div>
+          <div class="opt-stat"><span>Kompresi</span><strong>{% if optimization_summary.compression_percent is not none %}{{ optimization_summary.compression_percent }}%{% else %}—{% endif %}</strong></div>
+          <div class="opt-stat"><span>Terakhir</span><strong class="small">{{ optimization_summary.last_run or '—' }}</strong></div>
+        </div>
+
+        {% if optimization_summary.needs_full_run %}
+        <p class="ds-v2-hint-warn mt-2 mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Hanya {{ optimization_summary.optimized }} gambar dioptimasi. Jalankan optimasi untuk seluruh dataset.</p>
+        {% endif %}
+
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          <button type="button" class="btn ds-v2-btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#optimizeConfirmModal" id="optimizeImagesBtnCard" {% if optimization_running %}disabled{% endif %}>
+            <i class="bi bi-lightning-charge me-1" aria-hidden="true"></i>Optimasi Semua Gambar
+          </button>
+          {% if optimization_report %}
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="viewOptimizationReportBtn">
+            <i class="bi bi-file-text me-1"></i>Detail Laporan
+          </button>
+          {% endif %}
+        </div>
+      </div>
+    </details>
+
+    <details class="ds-v2-acc">
+      <summary class="ds-v2-acc-head">
+        <span><i class="bi bi-copy"></i> Manajemen Duplikat</span>
+        {% if duplicate_report and duplicate_report.cross_split_leakage_detected %}
+        <span class="status-badge failed">Leakage</span>
+        {% else %}
+        <span class="status-badge ready">Aktif</span>
+        {% endif %}
+      </summary>
+      <div class="ds-v2-acc-body">
+        {% if duplicate_report and (duplicate_report.exact_duplicate_count or duplicate_report.near_duplicate_count) %}
+        <div class="ds-v2-dup-grid">
+          <div><span>Duplikat exact</span><strong>{{ duplicate_report.exact_duplicate_count or 0 }}</strong></div>
+          <div><span>Duplikat near</span><strong>{{ duplicate_report.near_duplicate_count or 0 }}</strong></div>
+          <div><span>Metode</span><strong>SHA-256 hash</strong></div>
+          <div><span>Kebijakan</span><strong>Lewati duplikat</strong></div>
+        </div>
+        {% if duplicate_report.cross_split_leakage_detected %}
+        <div class="ds-v2-balance-alert mt-2 mb-0" role="alert">
+          <i class="bi bi-exclamation-octagon-fill" aria-hidden="true"></i>
+          <span>Data leakage terdeteksi antar split. Tinjau duplikat sebelum retrain.</span>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="ds-v2-dup-success">
+          <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+          <span>Tidak ditemukan duplikasi filename atau kandidat gambar ganda.</span>
+        </div>
+        {% endif %}
+        <p class="ds-v2-hint mt-2 mb-0">Duplikat otomatis dilewati saat unggah. Jalankan audit untuk verifikasi menyeluruh.</p>
+        <div class="d-flex flex-wrap gap-2 mt-2">
+          <form method="post" action="{{ url_for('dataset.run_duplicate_audit_route') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-warning btn-sm"><i class="bi bi-files me-1"></i>Audit Duplikat</button>
+          </form>
+          <form method="post" action="{{ url_for('dataset.run_label_audit_route') }}" class="d-inline">
+            <button type="submit" class="btn btn-outline-warning btn-sm"><i class="bi bi-tags me-1"></i>Audit Label</button>
+          </form>
+        </div>
+        {% if label_audit and label_audit.possible_mismatches %}
+        <details class="ds-v2-details mt-2">
+          <summary class="ds-v2-details-summary">Mismatch label ({{ label_audit.mismatch_count or 0 }})</summary>
+          <div class="ds-v2-details-body small">
+            {% for item in label_audit.possible_mismatches[:5] %}
+            <div class="audit-item border rounded p-2 mb-1">{{ item.filename }} · folder: {{ item.folder_label }} · suggested: {{ item.suggested_display or item.filename_suggested_label or '—' }}</div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+      </div>
+    </details>
+
+    <details class="ds-v2-acc">
+      <summary class="ds-v2-acc-head">
+        <span><i class="bi bi-tools"></i> Aksi Dataset</span>
+      </summary>
+      <div class="ds-v2-acc-body">
+        <div class="ds-v2-action-groups">
+          <div class="ds-v2-action-group">
+            <h6 class="ds-v2-action-group-title">Aksi Umum</h6>
+            <div class="d-flex flex-wrap gap-2">
+              <a href="{{ url_for('dataset.upload_dataset') }}" class="btn ds-v2-btn-secondary btn-sm"><i class="bi bi-upload me-1" aria-hidden="true"></i>Unggah Lagi</a>
+              <form method="post" action="{{ url_for('dataset.run_prediction_audit_route') }}" class="d-inline">
+                <input type="hidden" name="split" value="test">
+                <button type="submit" class="btn ds-v2-btn-secondary btn-sm"><i class="bi bi-search me-1" aria-hidden="true"></i>Audit Prediksi (Test)</button>
+              </form>
+            </div>
+          </div>
+          {% if prep_status and prep_status.processed > 0 %}
+          <div class="ds-v2-action-group ds-v2-danger-zone">
+            <h6 class="ds-v2-action-group-title danger"><i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>Danger Zone</h6>
+            <form method="post" action="{{ url_for('dataset.clear_split') }}" onsubmit="return confirm('Hapus folder train/validation/test? Raw tidak dihapus.')">
+              <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash me-1" aria-hidden="true"></i>Hapus Split</button>
+            </form>
+          </div>
+          {% endif %}
+        </div>
+        {% if prediction_audit or misclassification_report %}
+        <p class="small mt-2 mb-1">Akurasi audit: <strong>{{ ((prediction_audit.accuracy or 0) * 100)|round(1) }}%</strong> · Salah: <strong>{{ prediction_audit.wrong_predictions or misclassification_report.misclassified_count or 0 }}</strong></p>
+        {% if confusion_pairs and confusion_pairs.pairs %}
+        <details class="ds-v2-details">
+          <summary class="ds-v2-details-summary">Pasangan kelas paling bingung</summary>
+          <ul class="small mb-0">
+            {% for pair in confusion_pairs.pairs[:5] %}
+            <li>{{ pair.true_display or pair.true_class }} → {{ pair.predicted_display or pair.predicted_class }} ({{ pair.count }})</li>
+            {% endfor %}
+          </ul>
+        </details>
+        {% endif %}
+        {% endif %}
+      </div>
+    </details>
+
+    <details class="ds-v2-acc">
+      <summary class="ds-v2-acc-head">
+        <span><i class="bi bi-signpost-split"></i> Alur Retrain Setelah Cleaning</span>
+      </summary>
+      <div class="ds-v2-acc-body">
+        <p class="ds-v2-tool-intro">Alur ini menggambarkan tahapan penelitian setelah pemeliharaan dataset.</p>
+        <div class="ds-v2-retrain-stepper" role="list">
+          {% for step in retrain_workflow.steps %}
+          {% if not loop.first %}<div class="ds-v2-retrain-connector {{ 'done' if step.done else '' }}" aria-hidden="true"></div>{% endif %}
+          <div class="ds-v2-retrain-step {{ 'done' if step.done else '' }}" role="listitem">
+            <span class="ds-v2-retrain-num">{{ loop.index }}</span>
+            <i class="bi bi-{{ step.icon }}" aria-hidden="true"></i>
+            <span>{{ step.label_id }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <details class="ds-v2-details mt-3">
+          <summary class="ds-v2-details-summary">Penjelasan alur lengkap</summary>
+          <p class="ds-v2-hint mb-0">Unggah → Optimasi → Bersihkan → Audit label → Bagi dataset → Latih model → Evaluasi test set → Review gambar salah klasifikasi.</p>
+        </details>
+      </div>
+    </details>
+
+  </section>
+
+</div>
+
+{# ── Modals ── #}
+<div class="modal fade" id="optimizeConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-lightning-charge me-2"></i>Optimasi Semua Gambar?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Membuat salinan terkompresi untuk preview dan training. File asli tidak dihapus.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+        <form method="post" action="{{ url_for('dataset.optimize_dataset_images_route') }}" id="optimizeDatasetForm" class="d-inline">
+          <button type="submit" class="btn btn-emerald" id="optimizeSubmitBtn"><i class="bi bi-check2-circle me-1"></i>Ya, Optimasi</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="optimizationReportModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-file-text me-2"></i>Laporan Optimasi</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <pre id="optimizationReportContent" class="optimization-report-pre mb-0">{% if optimization_report %}{{ optimization_report | tojson(indent=2) }}{% else %}Belum ada laporan.{% endif %}</pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Tutup</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="splitConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i>Proses &amp; Bagi Dataset?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Validasi gambar raw dan bagi ke folder train/validation/test dengan rasio <strong>70:15:15</strong>.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+        <form method="post" action="{{ url_for('dataset.split_dataset') }}" id="splitDatasetForm" class="d-inline">
+          <button type="submit" class="btn btn-gold" id="splitSubmitBtn"><i class="bi bi-check2-circle me-1"></i>Ya, Proses</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="viewImageModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-preview-dialog">
+    <div class="modal-content dataset-preview-modal">
+      <div class="modal-header dataset-preview-modal-header">
+        <div>
+          <span class="class-pill" id="viewImageClassBadge">Class</span>
+          <h5 class="modal-title mt-1 mb-0" id="viewImageTitle">Preview</h5>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+      </div>
+      <div class="modal-body dataset-preview-modal-body">
+        <div class="preview-modal-grid">
+          <div class="preview-image-panel">
+            <div class="preview-image-frame">
+              <div id="viewImageLoading" class="preview-loading d-none" role="status">
+                <span class="spinner-border spinner-border-sm me-2"></span>Memuat...
+              </div>
+              <img id="viewImageSrc" class="preview-image d-none" alt="Preview">
+              <div id="viewImageEmpty" class="preview-empty-state d-none">
+                <i class="bi bi-image-alt" aria-hidden="true"></i>
+                <h6>Pratinjau gambar tidak tersedia</h6>
+                <p class="mb-0">File mungkin telah dipindah atau dihapus.</p>
+              </div>
+            </div>
+          </div>
+          <div class="preview-meta-panel">
+            <h6 class="preview-meta-title">Metadata</h6>
+            <div class="preview-meta-list">
+              <div class="preview-meta-row"><span>Kelas</span><strong id="metaClass">-</strong></div>
+              <div class="preview-meta-row"><span>Filename</span><strong id="metaFilename" class="text-break">-</strong></div>
+              <div class="preview-meta-row"><span>Format</span><strong id="metaFormat">-</strong></div>
+              <div class="preview-meta-row"><span>Dimensi</span><strong id="metaSize">-</strong></div>
+              <div class="preview-meta-row"><span>Ukuran File</span><strong id="metaFileSize">-</strong></div>
+              <div class="preview-meta-row"><span>Sumber</span><strong id="metaSource">-</strong></div>
+              <div class="preview-meta-row"><span>Tanggal</span><strong id="metaDate">-</strong></div>
+              <div class="preview-meta-row"><span>ID</span><strong id="metaId">-</strong></div>
+              <div class="preview-meta-row"><span>Status File</span><strong id="metaStatus">-</strong></div>
+              <div class="preview-meta-row"><span>Preview Source</span><strong id="metaPreviewSource">-</strong></div>
+              {% if debug_mode %}
+              <div class="preview-meta-row debug-row"><span>Stored Path</span><strong id="metaPath" class="text-break small">-</strong></div>
+              <div class="preview-meta-row debug-row"><span>Resolved Path</span><strong id="metaResolved" class="text-break small">-</strong></div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer dataset-preview-modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Tutup</button>
+        <button type="button" class="btn btn-outline-danger d-none" id="modalDeleteBtn"><i class="bi bi-trash me-1"></i>Hapus</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title text-danger"><i class="bi bi-trash me-2"></i>Hapus Gambar?</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Hapus record gambar dari dataset? File fisik juga akan dihapus jika masih ada.</p>
+        <div class="delete-summary">
+          <div><span>File</span><strong id="deleteFileName">-</strong></div>
+          <div><span>Kelas</span><strong id="deleteClassName">-</strong></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
+        <form method="post" id="deleteImageForm" class="d-inline">
+          <button type="submit" class="btn btn-danger"><i class="bi bi-trash me-1"></i>Hapus</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.DATASET_PLACEHOLDER = {{ placeholder_url|tojson }};
+window.DATASET_DELETE_URL_TEMPLATE = {{ url_for('dataset.delete_dataset', item_id=0)|tojson }};
+window.DATASET_OPTIMIZATION_STATUS_URL = {{ url_for('dataset.optimization_status')|tojson }};
+window.DATASET_OPTIMIZATION_RUNNING = {{ (optimization_running or optimization_summary.is_running)|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/dataset.js') }}"></script>
+{% endblock %}

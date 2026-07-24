@@ -1,0 +1,95 @@
+{# Informational card — expects `khat_chars` from build_characteristics_context #}
+{% if khat_chars and khat_chars.predicted %}
+<section class="result-section result-khat-chars-section" aria-labelledby="khatCharsTitle">
+  <article class="khat-chars-card card classify-card khat-chars--{{ khat_chars.predicted.class_key }}">
+    <header class="card-header khat-chars-header">
+      <div class="khat-chars-header-text">
+        <h5 class="khat-chars-title mb-0" id="khatCharsTitle">
+          <i class="bi bi-palette2 me-2" aria-hidden="true"></i>{{ khat_chars.card_title }}
+        </h5>
+        <p class="khat-chars-subtitle mb-0">{{ khat_chars.card_subtitle }}</p>
+      </div>
+      <span class="khat-chars-class-badge class-pill {{ khat_chars.predicted.class_key }}" title="Predicted class">
+        {{ khat_chars.predicted_display }}
+      </span>
+    </header>
+
+    <div class="card-body khat-chars-body">
+      {% if khat_chars.is_mismatch and khat_chars.mismatch_warning %}
+      <div class="khat-chars-mismatch-alert" role="alert">
+        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+        <div>
+          <p class="khat-chars-mismatch-text mb-0">{{ khat_chars.mismatch_warning }}</p>
+          {% if khat_chars.expected_display %}
+          <div class="khat-chars-matchup mt-2">
+            <span class="khat-chars-matchup-item">
+              <small>Expected Class</small>
+              <strong class="class-pill {{ khat_chars.expected.class_key if khat_chars.expected else '' }}">{{ khat_chars.expected_display }}</strong>
+            </span>
+            <span class="khat-chars-matchup-sep" aria-hidden="true"><i class="bi bi-arrow-left-right"></i></span>
+            <span class="khat-chars-matchup-item">
+              <small>Predicted Class</small>
+              <strong class="class-pill {{ khat_chars.predicted.class_key }}">{{ khat_chars.predicted_display }}</strong>
+            </span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="khat-chars-layout">
+        <div class="khat-chars-main">
+          <h6 class="khat-chars-section-title">{{ khat_chars.predicted.title }}</h6>
+          <p class="khat-chars-description">{{ khat_chars.predicted.description }}</p>
+        </div>
+        <div class="khat-chars-list-wrap">
+          <h6 class="khat-chars-list-heading">Karakteristik Utama</h6>
+          <ul class="khat-chars-list">
+            {% for item in khat_chars.predicted.characteristics %}
+            <li><i class="bi bi-check2-circle" aria-hidden="true"></i><span>{{ item }}</span></li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      {% if khat_chars.show_comparison and khat_chars.expected_comparison %}
+      <div class="khat-chars-comparison">
+        <h6 class="khat-chars-comparison-title">
+          <i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i>Perbandingan dengan Expected Class
+        </h6>
+        <div class="khat-chars-comparison-grid">
+          <div class="khat-chars-compare-col predicted-col khat-chars--{{ khat_chars.predicted.class_key }}">
+            <div class="khat-chars-compare-head">
+              <span class="class-pill {{ khat_chars.predicted.class_key }}">{{ khat_chars.predicted_display }}</span>
+              <small>Predicted Class</small>
+            </div>
+            <p class="khat-chars-compare-desc">{{ khat_chars.predicted_comparison.short_description }}</p>
+            <ul class="khat-chars-list compact">
+              {% for item in khat_chars.predicted_comparison.short_characteristics %}
+              <li><i class="bi bi-check2-circle" aria-hidden="true"></i><span>{{ item }}</span></li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="khat-chars-compare-col expected-col khat-chars--{{ khat_chars.expected.class_key }}">
+            <div class="khat-chars-compare-head">
+              <span class="class-pill {{ khat_chars.expected.class_key }}">{{ khat_chars.expected_display }}</span>
+              <small>Expected Class</small>
+            </div>
+            <p class="khat-chars-compare-desc">{{ khat_chars.expected_comparison.short_description }}</p>
+            <ul class="khat-chars-list compact">
+              {% for item in khat_chars.expected_comparison.short_characteristics %}
+              <li><i class="bi bi-check2-circle" aria-hidden="true"></i><span>{{ item }}</span></li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <aside class="khat-chars-disclaimer">
+        <i class="bi bi-info-circle me-1" aria-hidden="true"></i>{{ khat_chars.disclaimer_note }}
+      </aside>
+    </div>
+  </article>
+</section>
+{% endif %}

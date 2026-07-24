@@ -1,0 +1,24 @@
+# Windows-friendly dependencies for Arabic Khat AI
+# Used by installer/install_windows.bat (falls back to root requirements.txt)
+
+Flask>=3.0.0
+Flask-SQLAlchemy>=3.1.0
+PyMySQL>=1.1.0
+python-dotenv>=1.0.0
+Werkzeug>=3.0.0
+
+# Core ML / image processing (training & Keras backend)
+tensorflow>=2.20.0; python_version >= "3.13"
+tensorflow==2.15.0; python_version < "3.13"
+tensorflowjs>=4.22.0
+h5py>=3.11.0
+numpy>=1.24.0
+pandas>=2.0.0
+Pillow>=10.0.0
+opencv-python>=4.8.0
+scikit-learn>=1.3.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# Note: Teachable Machine browser inference uses TensorFlow.js (CDN).
+# TensorFlow Python is still required for Keras training and TM model conversion.

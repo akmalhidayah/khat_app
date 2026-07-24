@@ -1,0 +1,173 @@
+{# Evaluation error analysis dashboard #}
+<section class="eval-v2-section eval-errors-dashboard" id="misclassificationSection">
+  <div class="eval-v2-errors-header">
+    <div>
+      <h2 class="eval-v2-section-title">Model Evaluation</h2>
+      <p class="eval-v2-section-desc">Analyze prediction errors, class confusion, confidence issues, and dataset quality.</p>
+    </div>
+    <div class="eval-v2-errors-badges">
+      {% if tm_info or active_engine == 'teachable_machine' %}
+      <span class="eval-v2-badge ok"><i class="bi bi-cpu"></i> Active Model: Teachable Machine</span>
+      {% endif %}
+      {% if test_samples %}<span class="eval-v2-badge neutral"><i class="bi bi-images"></i> Test Images: {{ test_samples }}</span>{% endif %}
+      {% if eval_summary.accuracy_pct is not none %}<span class="eval-v2-badge info"><i class="bi bi-bullseye"></i> Accuracy: {{ eval_summary.accuracy_pct }}%</span>{% endif %}
+      <span class="eval-v2-badge warn"><i class="bi bi-x-circle"></i> Errors: {{ misc_summary.total or misclassified_rows|length }}</span>
+      {% if misc_summary.high_confidence_count %}<span class="eval-v2-badge critical"><i class="bi bi-exclamation-octagon"></i> High Confidence Errors: {{ misc_summary.high_confidence_count }}</span>{% endif %}
+    </div>
+  </div>
+
+  {% if error_dashboard_cards %}
+  <div class="eval-v2-error-cards">
+    {% for card in error_dashboard_cards %}
+    <div class="eval-v2-error-card tone-{{ card.tone }}">
+      <div class="eval-v2-error-card-icon"><i class="bi {{ card.icon }}"></i></div>
+      <div class="eval-v2-error-card-body">
+        <div class="eval-v2-error-card-label">{{ card.label }}</div>
+        <div class="eval-v2-error-card-value">{{ card.value }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if misc_summary.high_confidence_count %}
+  <div class="eval-v2-alert-pro eval-v2-alert-critical">
+    <div class="eval-v2-alert-icon"><i class="bi bi-exclamation-octagon-fill"></i></div>
+    <div class="eval-v2-alert-body">
+      <h6 class="eval-v2-alert-title">High-Confidence Error Detected</h6>
+      <p class="mb-2">{{ misc_summary.high_confidence_count }} prediction{{ 's are' if misc_summary.high_confidence_count != 1 else ' is' }} incorrect even though confidence is ≥85%. This may indicate mislabeled data, class similarity, dataset imbalance, or preprocessing issues.</p>
+      <ul class="eval-v2-alert-actions mb-0">
+        <li>Review labels</li>
+        <li>Check image preprocessing</li>
+        <li>Inspect class confusion</li>
+        <li>Add more training data for weak classes</li>
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if confusion_insight %}
+  <div class="eval-v2-card eval-v2-confusion-insight">
+    <div class="eval-v2-card-head"><span><i class="bi bi-lightbulb"></i> {{ confusion_insight.title }}</span></div>
+    <div class="eval-v2-card-body">
+      <p class="mb-2">{{ confusion_insight.message }}</p>
+      <p class="eval-v2-hint mb-0"><i class="bi bi-arrow-right-circle me-1"></i>{{ confusion_insight.action }}</p>
+      {% if misc_summary.weakest_class %}
+      <div class="eval-v2-dataset-reco mt-3">
+        <strong>Dataset Recommendation:</strong>
+        {{ misc_summary.weakest_class }} appears as the weakest class. Review labels and add more diverse {{ misc_summary.weakest_class }} images, especially samples visually close to confused classes.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="eval-v2-card eval-v2-errors-table-card">
+    <div class="eval-v2-card-head">
+      <div>
+        <span><i class="bi bi-exclamation-diamond"></i> Prediction Error Analysis</span>
+        <p class="eval-v2-card-sub mb-0">Incorrect predictions from the holdout test set with confidence and recommendation details.</p>
+      </div>
+    </div>
+    <div class="eval-v2-card-body">
+      <div class="eval-v2-filter-toolbar">
+        <div class="eval-v2-filter-title"><i class="bi bi-funnel me-1"></i> Filter Evaluation Results</div>
+        <div class="eval-v2-filter-grid">
+          <div class="eval-v2-filter-field">
+            <label for="filterTrueClass">True Class</label>
+            <select class="form-select form-select-sm" id="filterTrueClass">
+              <option value="">All True Classes</option>
+              {% for cls in ['naskhi','diwani','diwani_jali','tsuluts'] %}
+              <option value="{{ cls }}">{{ cls.replace('_',' ').title() }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="eval-v2-filter-field">
+            <label for="filterPredClass">Predicted Class</label>
+            <select class="form-select form-select-sm" id="filterPredClass">
+              <option value="">All Predicted Classes</option>
+              {% for cls in ['naskhi','diwani','diwani_jali','tsuluts'] %}
+              <option value="{{ cls }}">{{ cls.replace('_',' ').title() }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="eval-v2-filter-field eval-v2-filter-field-wide">
+            <label for="filterErrorType">Error Type</label>
+            <select class="form-select form-select-sm eval-v2-filter-select-wide" id="filterErrorType">
+              <option value="">All Error Types</option>
+              <option value="high_confidence">High Confidence Error</option>
+              <option value="label_issue">Possible Label Issue</option>
+              <option value="low_confidence">Low Confidence Error</option>
+              <option value="ambiguous">Ambiguous Prediction</option>
+              <option value="class_confusion">Class Confusion</option>
+            </select>
+          </div>
+          <div class="eval-v2-filter-field">
+            <label for="filterFilename">Search Filename</label>
+            <input type="search" class="form-control form-control-sm" id="filterFilename" placeholder="Search filename...">
+          </div>
+          <div class="eval-v2-filter-field eval-v2-filter-check">
+            <label class="eval-v2-check"><input type="checkbox" id="filterHighConf"> Confidence ≥85%</label>
+          </div>
+          <div class="eval-v2-filter-actions">
+            <button type="button" class="btn eval-v2-btn-primary btn-sm eval-v2-apply-filter-btn" id="applyMiscFilters"><i class="bi bi-search me-1"></i>Apply Filter</button>
+            <button type="button" class="btn eval-v2-btn-outline btn-sm eval-v2-reset-filter-btn" id="resetMiscFilters"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="miscActiveFilterBadge" class="eval-v2-active-filter-wrap d-none" aria-live="polite"></div>
+      <p id="miscResultCount" class="eval-v2-result-count mb-2">Showing all prediction errors</p>
+
+      <div class="eval-v2-table-wrap eval-v2-errors-table-wrap mt-2" id="evaluationResultsTable">
+        <table class="table eval-v2-table eval-v2-errors-table" id="miscTable">
+          <thead>
+            <tr>
+              <th>Image</th>
+              <th>Filename</th>
+              <th>True Class</th>
+              <th>Predicted Class</th>
+              <th>Confidence</th>
+              <th>Top-2 Margin</th>
+              <th>Error Type</th>
+              <th>Recommendation</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="miscTableBody"></tbody>
+        </table>
+      </div>
+
+      <div id="miscEmptyState" class="eval-v2-empty eval-v2-filter-empty d-none" aria-live="polite">
+        <i class="bi bi-inbox"></i>
+        <h5>No evaluation records found</h5>
+        <p>No prediction errors match the selected filters. Try changing the filter or reset all filters.</p>
+        <button type="button" class="btn eval-v2-btn-outline btn-sm" id="miscEmptyResetBtn"><i class="bi bi-arrow-counterclockwise me-1"></i>Reset Filter</button>
+      </div>
+
+      <nav class="eval-v2-pagination" id="miscPagination" aria-label="Misclassification pagination"></nav>
+    </div>
+  </div>
+</section>
+
+<div class="modal fade eval-error-modal-root" id="miscPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable eval-error-modal-dialog">
+    <div class="modal-content eval-error-modal">
+      <div class="eval-error-modal-header">
+        <div>
+          <h5 class="eval-error-modal-title" id="miscPreviewTitle">Prediction Error Detail</h5>
+          <p class="eval-error-modal-subtitle mb-0">Detailed analysis of one incorrect prediction.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="eval-error-modal-body" id="miscPreviewBody"></div>
+      <div class="eval-error-modal-footer">
+        <button type="button" class="btn eval-v2-btn-outline btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn eval-v2-btn-outline btn-sm" id="miscMarkReviewedBtn"><i class="bi bi-check2-square me-1"></i>Mark as Reviewed</button>
+        <button type="button" class="btn btn-warning btn-sm" id="miscMoveClassBtn"><i class="bi bi-folder-symlink me-1"></i>Move to Correct Class</button>
+        <button type="button" class="btn eval-v2-btn-primary btn-sm" id="miscSaveCorrectionBtn"><i class="bi bi-save me-1"></i>Save Label Correction</button>
+        <button type="button" class="btn btn-success btn-sm" id="miscAddDatasetBtn"><i class="bi bi-database-add me-1"></i>Add to Correction Dataset</button>
+      </div>
+    </div>
+  </div>
+</div>

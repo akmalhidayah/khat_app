@@ -1,0 +1,116 @@
+{# Dataset Quality Control — compact academic panel #}
+<section class="ds-v2-card ds-v2-qc-panel ds-v2-section" aria-label="Dataset Quality Control">
+  <div class="ds-v2-card-head">
+    <div class="ds-v2-card-head-text">
+      <span class="ds-v2-card-icon" aria-hidden="true"><i class="bi bi-clipboard2-check"></i></span>
+      <div>
+        <strong>Dataset Quality Control</strong>
+        <small>Ringkasan kualitas dataset untuk kebutuhan training dan evaluasi model.</small>
+      </div>
+    </div>
+    <span class="ds-v2-badge {{ 'ok' if qc_report.balance_status == 'balanced' else 'warn' if qc_report.balance_status == 'needs_more_data' else 'danger' if qc_report.balance_status == 'imbalanced' else 'neutral' }}">
+      {{ qc_report.balance_label }}
+    </span>
+  </div>
+  <div class="ds-v2-card-body">
+    <div class="ds-v2-qc-grid">
+      <div class="ds-v2-qc-stat">
+        <span>Total Images</span>
+        <strong>{{ qc_report.total_images }}</strong>
+      </div>
+      <div class="ds-v2-qc-stat">
+        <span>Missing Files</span>
+        <strong class="{{ 'text-danger' if qc_report.missing_file_count else '' }}">{{ qc_report.missing_file_count }}</strong>
+      </div>
+      <div class="ds-v2-qc-stat">
+        <span>Corrupted Removed</span>
+        <strong>{{ qc_report.corrupted_count or 0 }}</strong>
+      </div>
+      <div class="ds-v2-qc-stat">
+        <span>Duplicate Filenames</span>
+        <strong class="{{ 'text-warning' if qc_report.duplicate_filename_count else '' }}">{{ qc_report.duplicate_filename_count }}</strong>
+      </div>
+    </div>
+
+    <div class="ds-v2-qc-table-wrap mt-3">
+      <table class="table table-sm ds-v2-qc-table mb-0">
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th>Count</th>
+            <th>Share</th>
+            <th>Status</th>
+            <th>Lihat Gambar Dataset</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in qc_report.class_rows %}
+          <tr class="qc-row-{{ row.status }}">
+            <td><span class="class-pill sm {{ row.class_key }}">{{ row.class_display }}</span></td>
+            <td><strong>{{ row.count }}</strong></td>
+            <td>{{ row.percent }}%</td>
+            <td>
+              {% if row.status == 'ok' %}
+              <span class="ds-v2-mini-badge success">OK</span>
+              {% elif row.status == 'low' %}
+              <span class="ds-v2-mini-badge warn">Low</span>
+              {% else %}
+              <span class="ds-v2-mini-badge danger">Imbalanced</span>
+              {% endif %}
+            </td>
+            <td class="ds-v2-qc-rec">
+              <a
+                class="ds-v2-qc-view-link"
+                href="{{ url_for('dataset.list_dataset', class_name=row.class_key) }}#dataset-image-list"
+                title="Lihat gambar dataset kelas {{ row.class_display }}"
+              >
+                <i class="bi bi-images" aria-hidden="true"></i>
+                Lihat gambar dataset dari setiap kelas
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if qc_report.recommendations %}
+    <div class="ds-v2-rec-box mt-3">
+      <h6 class="ds-v2-rec-title"><i class="bi bi-lightbulb me-1" aria-hidden="true"></i>Rekomendasi</h6>
+      <ul class="ds-v2-rec-list mb-0">
+        {% for r in qc_report.recommendations[:4] %}
+        <li>{{ r }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if qc_report.resolution.sampled %}
+    <p class="ds-v2-qc-res small text-muted mt-2 mb-0">
+      Resolusi sample ({{ qc_report.resolution.sampled }} gambar):
+      {{ qc_report.resolution.min_width }}–{{ qc_report.resolution.max_width }} ×
+      {{ qc_report.resolution.min_height }}–{{ qc_report.resolution.max_height }} px
+      (rata-rata {{ qc_report.resolution.avg_width }} × {{ qc_report.resolution.avg_height }} px)
+    </p>
+    {% endif %}
+
+    {% if qc_report.mislabeled_warnings %}
+    <div class="ds-v2-alert ds-v2-alert-warn mt-2 mb-0">
+      <strong>Kemungkinan mislabel:</strong>
+      <ul class="mb-0 mt-1 small">{% for w in qc_report.mislabeled_warnings[:3] %}<li>{{ w }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <div class="ds-v2-qc-actions">
+      <form method="post" action="{{ url_for('dataset.run_label_audit_route') }}" class="d-inline">
+        <button type="submit" class="btn btn-sm ds-v2-btn-outline"><i class="bi bi-tags me-1" aria-hidden="true"></i>Run Label Audit</button>
+      </form>
+      <form method="post" action="{{ url_for('dataset.run_label_mismatch_route') }}" class="d-inline">
+        <button type="submit" class="btn btn-sm ds-v2-btn-outline warn"><i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>Scan Mislabels</button>
+      </form>
+      <form method="post" action="{{ url_for('dataset.run_duplicate_audit_route') }}" class="d-inline">
+        <button type="submit" class="btn btn-sm ds-v2-btn-outline"><i class="bi bi-files me-1" aria-hidden="true"></i>Duplicate Audit</button>
+      </form>
+    </div>
+  </div>
+</section>

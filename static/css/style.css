@@ -1,0 +1,307 @@
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+:root {
+    --emerald: #0f766e;
+    --gold: #d4a017;
+    --sidebar: #1f2937;
+    --bg: #f3f4f6;
+    --muted: #6b7280;
+}
+
+html,
+body {
+    margin: 0;
+    max-width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    background:
+        radial-gradient(circle at 10% -10%, rgba(15, 118, 110, 0.09), transparent 30%),
+        radial-gradient(circle at 100% 0%, rgba(212, 160, 23, 0.06), transparent 25%),
+        var(--bg);
+    font-family: "Inter", "Segoe UI", sans-serif;
+    color: #0f172a;
+}
+
+.page-container,
+.dashboard-container,
+.content-wrapper {
+    width: 100%;
+    max-width: 1320px;
+    margin-left: auto;
+    margin-right: auto;
+    overflow-x: hidden;
+    padding-left: 24px;
+    padding-right: 24px;
+}
+
+.page-container-compact {
+    padding-top: 0.5rem !important;
+    padding-bottom: 1.25rem !important;
+}
+
+.topbar {
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 16px;
+    margin: 1rem 0 1.25rem;
+    padding: 0.9rem 1.1rem;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    border: 1px solid rgba(226, 232, 240, 0.85);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    width: 100%;
+    max-width: 100%;
+}
+
+/* Sticky app header — stays within main content, below sidebar z-index */
+.topbar.content-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition:
+        box-shadow 0.2s ease,
+        border-color 0.2s ease,
+        background-color 0.2s ease;
+}
+
+.topbar.content-topbar.is-sticky-scrolled {
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+    border-color: rgba(20, 184, 166, 0.25);
+}
+
+.topbar > div:first-child,
+.topbar-head {
+    min-width: 0;
+    flex: 1 1 240px;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+}
+
+.topbar-titles {
+    min-width: 0;
+}
+
+.topbar-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -0.01em;
+}
+
+.topbar-subtitle {
+    font-size: 0.82rem;
+    color: #64748b;
+    margin-top: 0.15rem;
+    line-height: 1.4;
+    max-width: 42rem;
+}
+
+.topbar-model-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 0.35rem;
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #0f766e;
+    background: #ecfdf5;
+    border: 1px solid #99f6e4;
+}
+
+.topbar-user {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    flex-shrink: 0;
+}
+
+.panel-card, .stat-card {
+    border: 0;
+    border-radius: 16px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #ffffff, #f8fafc);
+    padding: 1.15rem;
+    transition: transform .2s ease, box-shadow .2s ease;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+}
+
+.stat-card p { margin: 0; color: var(--muted); font-size: .92rem; }
+.stat-card h3 { margin: .4rem 0 0; color: var(--emerald); font-weight: 700; }
+
+.btn-emerald {
+    background: var(--emerald);
+    color: #fff;
+    border: none;
+}
+.btn-emerald:hover { background: #0d5f58; color: #fff; }
+
+.thumb-sm { width: 54px; height: 54px; object-fit: cover; border-radius: 10px; }
+
+.login-wrap {
+    min-height: 95vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0f766e, #1f2937);
+}
+
+.login-card {
+    width: 100%;
+    max-width: 420px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 18px;
+    padding: 2rem;
+}
+
+.upload-dropzone {
+    border: 2px dashed #cbd5e1;
+    border-radius: 14px;
+    padding: 2rem;
+    text-align: center;
+    background: #f8fafc;
+    transition: all .2s ease;
+}
+
+.upload-dropzone.drag-active {
+    border-color: var(--emerald);
+    background: #ecfeff;
+}
+
+.preview-wrap {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #fff;
+    padding: .6rem;
+}
+
+.table thead th {
+    color: #374151;
+    font-weight: 600;
+    font-size: .9rem;
+}
+
+.table-responsive {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.card-header {
+    background: #fff;
+    border-bottom: 1px solid #f1f5f9;
+    font-weight: 600;
+}
+
+.card,
+.dashboard-card,
+.analytics-card {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.alert {
+    border: 1px solid transparent;
+    border-radius: 12px;
+    font-size: .9rem;
+    padding: .7rem .95rem;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+    max-width: 100%;
+}
+
+.alert-success {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+    color: #065f46;
+}
+
+.alert-warning {
+    background: #fffbeb;
+    border-color: #fde68a;
+    color: #92400e;
+}
+
+.alert-info {
+    background: #f0f9ff;
+    border-color: #bae6fd;
+    color: #0c4a6e;
+}
+
+.alert-danger {
+    background: #fef2f2;
+    border-color: #fecaca;
+    color: #991b1b;
+}
+
+.alert .btn-close {
+    transform: scale(.85);
+}
+
+@media (max-width: 991.98px) {
+    .topbar.content-topbar {
+        top: 0;
+        border-radius: 14px;
+    }
+
+    .topbar {
+        margin-top: 0.75rem;
+        align-items: flex-start;
+    }
+
+    .topbar-head {
+        flex-direction: row;
+        align-items: flex-start;
+    }
+}
+
+@media (max-width: 768px) {
+    .page-container,
+    .dashboard-container,
+    .content-wrapper {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    .page-container,
+    .dashboard-container,
+    .content-wrapper {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .topbar-title {
+        font-size: 1rem;
+    }
+
+    .topbar-subtitle {
+        font-size: 0.76rem;
+    }
+}

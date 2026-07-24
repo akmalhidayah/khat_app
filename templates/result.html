@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+{% block title %}Classification Result{% endblock %}
+{% block page_container_class %}result-page-container{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/classification.css') }}">
+{% if global_is_teachable_machine %}
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="result-page result-page-v2" data-tm-active="{{ '1' if global_is_teachable_machine else '0' }}">
+
+<header class="result-page-header">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+      <h4 class="result-title mb-0"><i class="bi bi-clipboard-data me-2"></i>Classification Result</h4>
+      <p class="result-subtitle mb-0">Stage 2 — Khat Type Classification · {{ global_model_architecture }}</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% if global_is_teachable_machine %}
+      <span class="active-model-badge"><i class="bi bi-cpu me-1"></i>Active Model: Teachable Machine</span>
+      {% endif %}
+      <a href="{{ url_for('classification.classify_image') }}" class="btn btn-emerald btn-sm"><i class="bi bi-plus-circle me-1"></i>Classify Another</a>
+      <a href="{{ detail_url or url_for('classification.classification_detail', item_id=result.id) }}" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-calculator me-1"></i>Lihat Detail Perhitungan
+      </a>
+      <a href="{{ url_for('classification.history') }}" class="btn btn-outline-dark btn-sm"><i class="bi bi-clock-history me-1"></i>History</a>
+    </div>
+  </div>
+</header>
+
+{% if detection.is_borderline or detection.is_uncertain_khat %}
+<section class="stage1-inline-section mb-3">
+  {% include "includes/detection_stage.html" %}
+</section>
+{% endif %}
+
+{% if analysis.predicted_class %}
+<section class="validation-summary-card card validation-{{ 'match' if analysis.prediction_match else ('mismatch' if analysis.prediction_mismatch else 'neutral') }}">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+      <h6 class="validation-summary-title mb-0">
+        {% if analysis.prediction_match %}
+        <i class="bi bi-check-circle-fill text-success me-1"></i>Validation Summary
+        {% elif analysis.prediction_mismatch %}
+        <i class="bi bi-exclamation-octagon-fill text-danger me-1"></i>Validation Summary
+        {% else %}
+        <i class="bi bi-info-circle-fill text-primary me-1"></i>Validation Summary
+        {% endif %}
+      </h6>
+      <div class="d-flex flex-wrap gap-2 validation-summary-badges">
+        <span class="validation-badge status-{{ 'match' if analysis.prediction_match else ('mismatch' if analysis.prediction_mismatch else 'neutral') }}">{{ analysis.validation_status }}</span>
+        <span class="validation-badge conf-{{ analysis.confidence_interpretation_tone }}">{{ analysis.confidence_label }}</span>
+        <span class="validation-badge review-{{ 'danger' if analysis.prediction_mismatch else 'optional' }}">{{ analysis.review_status }}</span>
+        <span class="validation-badge decision-{{ 'caution' if 'Caution' in (analysis.final_decision or '') else ('danger' if analysis.prediction_mismatch else 'ok') }}">{{ analysis.final_decision }}</span>
+      </div>
+    </div>
+    <div class="validation-summary-grid">
+      <div class="vsum-item"><span>Expected Class</span><strong>{{ analysis.expected_class_display or 'Unknown' }}</strong></div>
+      <div class="vsum-item"><span>Predicted Class</span><strong class="{% if analysis.prediction_mismatch %}text-danger{% else %}text-success{% endif %}">{{ analysis.predicted_display_name }}</strong></div>
+      <div class="vsum-item"><span>Confidence</span><strong>{{ analysis.top_confidence_pct }}%</strong></div>
+      <div class="vsum-item"><span>Known Class Status</span><strong>{{ analysis.known_class_status or '—' }}</strong></div>
+      <div class="vsum-item"><span>Validation Status</span><strong>{{ analysis.validation_status }}</strong></div>
+      <div class="vsum-item"><span>Review Status</span><strong>{{ analysis.review_status }}</strong></div>
+      <div class="vsum-item"><span>Final Decision</span><strong>{{ analysis.final_decision }}</strong></div>
+      <div class="vsum-item"><span>Preprocessing</span><strong>{{ 'Manuscript Mode' if analysis.preprocessing_mode == 'manuscript' else 'Standard' }}</strong></div>
+    </div>
+    {% if analysis.no_comparator_message and not analysis.has_expected_class %}
+    <p class="validation-note mb-0 mt-2"><i class="bi bi-info-circle me-1"></i>{{ analysis.no_comparator_message }}</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if analysis.external_warning %}
+<section class="card classify-card external-review-card mb-3">
+  <div class="card-body py-3">
+    <h6 class="mb-2"><i class="bi bi-globe2 me-1"></i> Peringatan Gambar Eksternal</h6>
+    <p class="mb-0">{{ analysis.external_warning }}</p>
+  </div>
+</section>
+{% endif %}
+
+{% if analysis.show_mismatch_card %}
+<section class="card classify-card mismatch-warning-card mb-3">
+  <div class="card-body py-3">
+    <h6 class="mb-2 text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i> Prediksi Tidak Sesuai Label Pembanding</h6>
+    <p class="mb-2">
+      Gambar ini ditandai sebagai <strong>{{ analysis.expected_class_display }}</strong>, tetapi model memprediksi
+      <strong>{{ analysis.predicted_display_name }}</strong> ({{ analysis.top_confidence_pct }}%).
+      Hasil ini tidak boleh dianggap otomatis valid dan perlu masuk ke daftar koreksi dataset.
+    </p>
+    {% if analysis.misclassification_explanation %}
+    <p class="misclassification-explanation mb-3">{{ analysis.misclassification_explanation }}</p>
+    {% endif %}
+    <div class="d-flex flex-wrap gap-2">
+      <form method="post" action="{{ url_for('classification.save_correction', item_id=result.id) }}" class="d-inline">
+        <input type="hidden" name="correct_class" value="{{ analysis.expected_class }}">
+        <button type="submit" class="btn btn-sm btn-emerald">Simpan sebagai {{ analysis.expected_class_display }}</button>
+      </form>
+      <form method="post" action="{{ url_for('classification.save_correction', item_id=result.id) }}" class="d-inline">
+        <input type="hidden" name="correct_class" value="{{ analysis.expected_class }}">
+        <input type="hidden" name="correction_notes" value="Tambahkan ke dataset koreksi">
+        <button type="submit" class="btn btn-sm btn-outline-primary">Tambahkan ke Dataset Koreksi</button>
+      </form>
+      <form method="post" action="{{ url_for('classification.mark_wrong_prediction', item_id=result.id) }}" class="d-inline">
+        <button type="submit" class="btn btn-sm btn-outline-danger">Tandai Sebagai Salah Prediksi</button>
+      </form>
+      <form method="post" action="{{ url_for('classification.reclassify_result', item_id=result.id) }}" class="d-inline">
+        <input type="hidden" name="force_manuscript" value="1">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Klasifikasi Ulang dengan Preprocessing Dokumen</button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if analysis.dataset_bias_warning %}
+<section class="card classify-card dataset-bias-card mb-3">
+  <div class="card-body py-3">
+    <h6 class="mb-2"><i class="bi bi-pie-chart me-1"></i> Peringatan Distribusi Dataset</h6>
+    <p class="mb-0">{{ analysis.dataset_bias_warning }}</p>
+  </div>
+</section>
+{% endif %}
+
+<div class="result-main-grid result-grid">
+  <div class="result-col-image">
+    <div class="card classify-card result-image-card">
+      <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <span><i class="bi bi-image me-1"></i>Uploaded Image</span>
+        {% if image_url and analysis.image_meta.exists %}
+        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#imagePreviewModal">
+          <i class="bi bi-arrows-fullscreen me-1"></i>View Larger
+        </button>
+        {% endif %}
+      </div>
+      <div class="card-body py-2 result-image-card-body">
+        {% if image_url and analysis.image_meta.exists %}
+        <div class="result-preview-container">
+          <div class="result-preview-wrap">
+            <img src="{{ image_url }}" alt="Uploaded calligraphy" class="result-preview-img" id="resultPreviewImg">
+          </div>
+        </div>
+        <div class="image-meta-grid compact">
+          <div class="image-meta-item"><span>Filename</span><strong>{{ result.uploaded_filename or result.filename }}</strong></div>
+          {% if analysis.image_meta.width and analysis.image_meta.height %}
+          <div class="image-meta-item"><span>Dimensions</span><strong>{{ analysis.image_meta.width }} × {{ analysis.image_meta.height }} px</strong></div>
+          {% endif %}
+          <div class="image-meta-item"><span>Classified</span><strong>{{ result.created_at.strftime('%Y-%m-%d %H:%M:%S') if result.created_at else '—' }}</strong></div>
+        </div>
+        {% else %}
+        <div class="preview-empty"><i class="bi bi-image-alt"></i><p>Image preview unavailable.</p></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="result-col-prediction">
+    <div class="card classify-card result-prediction-card">
+      <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+        <span><i class="bi bi-stars me-1"></i>Prediction Details</span>
+        <span class="manual-review-badge {% if analysis.prediction_mismatch or analysis.top_confidence_pct < 70 %}review-yes{% elif analysis.review_status == 'Review Optional' %}review-optional{% else %}review-no{% endif %}">
+          {{ analysis.review_badge_text }}
+        </span>
+      </div>
+      <div class="card-body py-2">
+        <div class="prediction-details-grid">
+          <div class="pd-item"><span>Predicted Class</span><strong>{{ analysis.predicted_display_name }}</strong></div>
+          <div class="pd-item"><span>Expected Class</span><strong>{{ analysis.expected_class_display or '—' }}</strong></div>
+          <div class="pd-item"><span>Model Confidence</span><strong>{{ analysis.top_confidence_pct }}%</strong></div>
+          <div class="pd-item"><span>Confidence Category</span><strong>{{ analysis.confidence_label }}</strong></div>
+          <div class="pd-item"><span>Validation Status</span><strong>{{ analysis.validation_status }}</strong></div>
+          <div class="pd-item"><span>Review Status</span><strong>{{ analysis.review_status }}</strong></div>
+          <div class="pd-item"><span>Final Decision</span><strong>{{ analysis.final_decision }}</strong></div>
+          <div class="pd-item"><span>Model Architecture</span><strong>{{ analysis.model_display_name }}</strong></div>
+          <div class="pd-item"><span>Model Name</span><strong>{{ analysis.model_name or (analysis.tm_model_info.model_name if analysis.tm_model_info else analysis.model_short_name) }}</strong></div>
+          {% if analysis.tm_model_info %}
+          <div class="pd-item"><span>Model Source</span><strong>{{ analysis.model_source }}</strong></div>
+          <div class="pd-item"><span>Runtime</span><strong>{{ analysis.model_runtime }} Runtime</strong></div>
+          <div class="pd-item"><span>Input Size</span><strong>{{ analysis.model_input_size.replace('x', ' × ') }} px</strong></div>
+          {% endif %}
+          <div class="pd-item"><span>Known Class Status</span><strong>{{ analysis.known_class_status or '—' }}</strong></div>
+          <div class="pd-item"><span>Preprocessing Mode</span><strong>{{ 'Manuscript' if analysis.preprocessing_mode == 'manuscript' else 'Standard' }}</strong></div>
+          <div class="pd-item"><span>Classification Date</span><strong>{{ result.created_at.strftime('%Y-%m-%d %H:%M:%S') if result.created_at else '—' }}</strong></div>
+        </div>
+
+        <p class="prediction-explanation">{{ analysis.explanation_text }}</p>
+
+        {% if analysis.caution_note %}
+        <p class="caution-note mb-2"><i class="bi bi-info-circle me-1"></i>{{ analysis.caution_note }}</p>
+        {% endif %}
+
+        {% if analysis.saved_to_history and not analysis.filename_mismatch %}
+        <p class="saved-note mb-2"><i class="bi bi-database me-1"></i>{{ analysis.saved_label }}</p>
+        {% endif %}
+
+        <div class="prob-section mt-2">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="section-mini-title mb-0">Skor Probabilitas &amp; Peringkat Kemiripan</h6>
+          </div>
+          <p class="small text-muted mb-2">Probabilitas disesuaikan dengan kemiripan visual terhadap sampel dataset training per kelas khat.</p>
+          {% if analysis.expected_not_top %}
+          <p class="expected-not-top-note mb-2"><i class="bi bi-exclamation-triangle me-1"></i>Expected class is not the top prediction.</p>
+          {% endif %}
+
+          {% for item in analysis.sorted_probabilities %}
+          <div class="prob-item compact {% if item.highlight == 'mismatch' %}prob-mismatch{% elif item.highlight == 'match' %}prob-match{% elif item.highlight == 'expected' %}prob-expected{% endif %}">
+            <div class="prob-item-header">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="rank-number">#{{ item.rank }}</span>
+                <span class="class-pill {{ item.key }}">{{ item.label }}</span>
+                {% if item.is_predicted %}<span class="rank-badge predicted">Predicted Class</span>{% endif %}
+                {% if item.is_expected and not item.is_match %}<span class="rank-badge expected">Expected Class</span>{% endif %}
+                {% if item.is_match %}<span class="rank-badge match">Match</span>{% endif %}
+              </div>
+              <strong>{{ item.percent }}%</strong>
+            </div>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill bar-{{ item.color }}" style="width: {{ item.percent }}%;"></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Detail Perhitungan Algoritma — directly below main result grid #}
+{% include "includes/algorithm_calculation_card.html" %}
+
+{# Training dataset similarity check #}
+{% if analysis.similarity and analysis.similarity.available %}
+<section class="card classify-card dataset-similarity-card similarity-tone-{{ analysis.similarity.tone }}">
+  <div class="card-header py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span><i class="bi bi-intersect me-1"></i>Cek Kemiripan Dataset</span>
+    <span class="similarity-risk-badge">{{ analysis.similarity.risk_level }}</span>
+  </div>
+  <div class="card-body py-3">
+    <div class="similarity-grid">
+      <div class="sim-item"><span>Similarity Status</span><strong>{{ analysis.similarity.similarity_status }}</strong></div>
+      <div class="sim-item"><span>Similarity Score</span><strong>{{ analysis.similarity.similarity_score_pct }}%</strong></div>
+      <div class="sim-item"><span>Nearest Dataset Image</span><strong>{{ analysis.similarity.nearest_dataset_image }}</strong></div>
+      <div class="sim-item"><span>Nearest Dataset Class</span><strong>{{ analysis.similarity.nearest_dataset_class }}</strong></div>
+      <div class="sim-item"><span>Risk Level</span><strong>{{ analysis.similarity.risk_level }}</strong></div>
+      <div class="sim-item sim-item-wide"><span>Recommendation</span><strong>{{ analysis.similarity.recommendation }}</strong></div>
+    </div>
+    {% if analysis.similarity.message %}
+    <p class="similarity-note mb-2"><i class="bi bi-info-circle me-1"></i>{{ analysis.similarity.message }}</p>
+    {% endif %}
+    {% if analysis.similarity.academic_note %}
+    <p class="similarity-academic-note mb-0"><i class="bi bi-mortarboard me-1"></i>{{ analysis.similarity.academic_note }}</p>
+    {% endif %}
+  </div>
+</section>
+{% elif analysis.similarity and not analysis.similarity.available and analysis.similarity.similarity_status != '—' %}
+<section class="card classify-card dataset-similarity-card similarity-tone-neutral">
+  <div class="card-header py-2"><i class="bi bi-intersect me-1"></i>Cek Kemiripan Dataset</div>
+  <div class="card-body py-3">
+    <p class="similarity-note mb-0">{{ analysis.similarity.message or 'Indeks hash dataset belum tersedia. Proses dataset training terlebih dahulu.' }}</p>
+  </div>
+</section>
+{% endif %}
+
+{# 4. Ciri Utama Khat — directly below main result grid #}
+{% include "includes/khat_characteristics_card.html" %}
+
+<section class="card classify-card correction-panel-card mb-3">
+  <div class="card-header py-2"><i class="bi bi-pencil-square me-1"></i> Koreksi Label Prediksi</div>
+  <div class="card-body py-3">
+    <form method="post" action="{{ url_for('classification.save_correction', item_id=result.id) }}" class="correction-form">
+      <div class="row g-2">
+        <div class="col-md-4">
+          <label class="form-label small">Predicted Class</label>
+          <input type="text" class="form-control form-control-sm" value="{{ analysis.predicted_display_name }}" readonly>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small" for="correctClassSelect">Correct Class</label>
+          <select class="form-select form-select-sm" name="correct_class" id="correctClassSelect" required>
+            <option value="">— Pilih kelas —</option>
+            <option value="naskhi" {% if analysis.expected_class == 'naskhi' %}selected{% endif %}>Naskhi</option>
+            <option value="diwani">Diwani</option>
+            <option value="diwani_jali">Diwani Jali</option>
+            <option value="tsuluts">Tsuluts</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small" for="correctionNotes">Notes</label>
+          <input type="text" class="form-control form-control-sm" name="correction_notes" id="correctionNotes" placeholder="Catatan koreksi (opsional)" value="{{ result.correction_notes or '' }}">
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <button type="submit" class="btn btn-sm btn-emerald"><i class="bi bi-save me-1"></i> Simpan Koreksi ke Dataset</button>
+      </div>
+      {% if result.correction_label %}
+      <p class="saved-correction-note mt-2 mb-0"><i class="bi bi-check-circle me-1"></i>User Corrected Label: <strong>{{ result.correction_label|replace('_', ' ')|title }}</strong></p>
+      {% endif %}
+    </form>
+  </div>
+</section>
+
+{% if analysis.show_recommended_actions_card %}
+<section class="card classify-card mismatch-actions-card">
+  <div class="card-header py-2"><i class="bi bi-signpost-split me-1"></i>Recommended Actions</div>
+  <div class="card-body py-2">
+    <ol class="action-list mb-0">
+      {% for action in analysis.recommended_actions %}
+      <li>{{ action }}</li>
+      {% endfor %}
+    </ol>
+  </div>
+</section>
+{% endif %}
+
+<div class="accordion result-accordion" id="resultDetailsAccordion">
+  <div class="accordion-item classify-card border">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#detectionCollapse">
+        <i class="bi bi-funnel me-2"></i>Detection Stage &amp; Technical Metadata
+      </button>
+    </h2>
+    <div id="detectionCollapse" class="accordion-collapse collapse" data-bs-parent="#resultDetailsAccordion">
+      <div class="accordion-body py-2">
+        {% if not detection.is_borderline and not detection.is_uncertain_khat %}
+        {% include "includes/detection_stage.html" %}
+        {% else %}
+        <p class="small text-muted mb-2">Stage 1 validation summary is shown above because this input is borderline or uncertain.</p>
+        {% endif %}
+
+        {% if analysis.tm_model_info %}
+        <div class="model-verification-card mt-2">
+          <h6 class="section-mini-title mb-2"><i class="bi bi-patch-check me-1"></i>Model Verification</h6>
+          <div class="tech-grid">
+            <div class="tech-row"><span>Model Source</span><strong>{{ analysis.model_source or analysis.tm_model_info.model_source }}</strong></div>
+            <div class="tech-row"><span>Model Name</span><strong>{{ analysis.model_name or analysis.tm_model_info.model_name }}</strong></div>
+            <div class="tech-row"><span>Runtime</span><strong>{{ analysis.model_runtime or analysis.tm_model_info.model_runtime }} Runtime</strong></div>
+            <div class="tech-row"><span>Input Size</span><strong>{{ (analysis.model_input_size or analysis.tm_model_info.model_input_size).replace('x', ' × ') }} px</strong></div>
+            <div class="tech-row"><span>Model Type</span><strong>{{ analysis.tm_model_info.model_type }}</strong></div>
+            <div class="tech-row"><span>Prediction Engine</span><strong>{{ analysis.active_prediction_engine }}</strong></div>
+            <div class="tech-row"><span>Model File</span><strong>{{ analysis.tm_model_info.model_json_url }}</strong></div>
+            <div class="tech-row"><span>Metadata File</span><strong>{{ analysis.tm_model_info.model_metadata_url }}</strong></div>
+            <div class="tech-row"><span>Weights File</span><strong>{{ analysis.tm_model_info.model_weights_url }}</strong></div>
+            <div class="tech-row"><span>Labels</span><strong>{{ analysis.tm_model_info.labels_display }}</strong></div>
+          </div>
+        </div>
+        {% else %}
+        <div class="tech-grid mt-2">
+          <div class="tech-row"><span>Model Source</span><strong>{{ analysis.model_source or 'Keras Transfer Learning' }}</strong></div>
+          <div class="tech-row"><span>Model Name</span><strong>{{ analysis.model_name or analysis.model_short_name }}</strong></div>
+          <div class="tech-row"><span>Runtime</span><strong>{{ analysis.model_runtime or 'TensorFlow Keras' }}</strong></div>
+          <div class="tech-row"><span>Input Size</span><strong>{{ analysis.model_input_size or '224x224' }}</strong></div>
+          <div class="tech-row"><span>Prediction Engine</span><strong>{{ analysis.active_prediction_engine }}</strong></div>
+        </div>
+        {% endif %}
+
+        <div class="tech-grid mt-2">
+          <div class="tech-row"><span>Prediction ID</span><strong>{{ analysis.result_id or '—' }}</strong></div>
+          <div class="tech-row"><span>Model</span><strong>{{ analysis.model_architecture }}</strong></div>
+          <div class="tech-row"><span>Top-2 Class</span><strong>{{ analysis.second_class_display or '—' }}</strong></div>
+          <div class="tech-row"><span>Top-2 Score</span><strong>{{ analysis.second_confidence_pct or '—' }}{% if analysis.second_confidence_pct is not none %}%{% endif %}</strong></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if analysis.warnings %}
+  <div class="accordion-item classify-card border">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#actionsCollapse">
+        <i class="bi bi-lightbulb me-2"></i>Additional Notes &amp; Actions
+      </button>
+    </h2>
+    <div id="actionsCollapse" class="accordion-collapse collapse" data-bs-parent="#resultDetailsAccordion">
+      <div class="accordion-body py-2">
+        {% for warning in analysis.warnings %}
+        <div class="alert result-alert alert-{{ warning.tone if warning.tone in ['danger','warning','info','success'] else 'warning' }} mb-2 py-2">
+          <div class="fw-semibold small mb-1">{{ warning.title }}</div>
+          <div class="small mb-0">{{ warning.message }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+</div>
+
+{% if image_url %}
+<div class="modal fade" id="imagePreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title mb-0">{{ result.filename }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center result-modal-body">
+        <img src="{{ image_url }}" alt="Full preview" class="result-modal-img">
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if global_is_teachable_machine %}
+<script src="{{ url_for('static', filename='js/teachable_machine_client.js') }}"></script>
+{% endif %}
+<script src="{{ url_for('static', filename='js/result.js') }}"></script>
+{% endblock %}
