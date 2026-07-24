@@ -64,3 +64,4 @@ tm-my-image-model.zip
 # Temporary and OS files
 .DS_Store
 __MACOSX/
+/.cache/
