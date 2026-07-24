@@ -693,14 +693,22 @@ class KhatDetectionThresholdTests(unittest.TestCase):
         self.assertEqual(result["input_status"], "khat")
         self.assertTrue(result["stage2_allowed"])
 
-    def test_borderline_khat_is_rejected(self):
-        """Below accept (e.g. 64–69%) must not receive a class label."""
-        result = resolve_detection(0.699, CONFIG)
-        self.assertEqual(result["input_status"], "non_khat")
+    def test_borderline_khat_continues_with_caution(self):
+        """65–69.99% continues to Stage 2 with mandatory review."""
+        result = resolve_detection(0.6668, CONFIG)
+        self.assertEqual(result["input_status"], "khat")
         self.assertEqual(result["detection_status"], "borderline_khat")
-        self.assertFalse(result["stage2_allowed"])
-        self.assertEqual(result["detection_decision"], "rejected")
-        self.assertIn("Rejected", result["title"])
+        self.assertTrue(result["is_khat"])
+        self.assertTrue(result["stage2_allowed"])
+        self.assertEqual(
+            result["detection_decision"],
+            "continue_caution",
+        )
+        self.assertTrue(result["manual_review_required"])
+        self.assertEqual(
+            result["stage2_permission"],
+            "Enabled with caution",
+        )
 
     def test_uncertain_khat_is_rejected(self):
         result = resolve_detection(0.55, CONFIG)
@@ -729,10 +737,26 @@ class KhatDetectionThresholdTests(unittest.TestCase):
         self.assertFalse(result["stage2_allowed"])
         self.assertFalse(result["is_khat"])
 
-    def test_old_strict_threshold_would_have_rejected_74_percent(self):
-        """Document regression: 0.80 accept would wrongly block 74% Khat."""
-        strict = resolve_detection(0.7449, {**CONFIG, "KHAT_ACCEPT_THRESHOLD": 0.80})
-        self.assertNotEqual(strict["input_status"], "khat")
+    def test_higher_accept_threshold_moves_74_percent_to_borderline(self):
+        """A higher accept threshold still allows borderline manual review."""
+        strict = resolve_detection(
+            0.7449,
+            {
+                **CONFIG,
+                "KHAT_ACCEPT_THRESHOLD": 0.80,
+            },
+        )
+        self.assertEqual(strict["input_status"], "khat")
+        self.assertEqual(
+            strict["detection_status"],
+            "borderline_khat",
+        )
+        self.assertTrue(strict["stage2_allowed"])
+        self.assertTrue(strict["manual_review_required"])
+        self.assertEqual(
+            strict["detection_decision"],
+            "continue_caution",
+        )
 
 
 if __name__ == "__main__":

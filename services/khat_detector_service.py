@@ -1352,10 +1352,12 @@ def resolve_detection(
     config=None,
     force_classify: bool = False,
 ) -> Dict:
-    """Strict Khat detection: only clear Khat advances to 4-class classification.
+    """Resolve the Stage 1 Khat-detection decision.
 
-    Anything below the accept threshold is rejected (non-calligraphy / out of domain),
-    unless the operator explicitly force-continues classification.
+    Inputs at or above the accept threshold continue normally.
+    Inputs in the borderline band continue with mandatory manual review.
+    Inputs below the borderline threshold remain rejected unless the
+    operator explicitly force-continues classification.
     """
     if config is None:
         config = current_app.config
@@ -1400,13 +1402,41 @@ def resolve_detection(
             "explanation_text": None,
         }
 
-    # Below accept: reject by default (including former borderline/uncertain band).
-    is_borderline = khat_probability >= borderline
+    # Borderline Khat input: continue Stage 2 with mandatory review.
+    # The hard content gate has already rejected photos, Latin writing,
+    # and other clearly non-Arab content before this decision.
+    if khat_probability >= borderline:
+        return {
+            "input_status": "khat",
+            "detection_status": "borderline_khat",
+            "is_khat": True,
+            "detection_decision": "continue_caution",
+            "manual_review_required": True,
+            "stage2_allowed": True,
+            "stage2_permission": "Enabled with caution",
+            "title": "Borderline Khat Input — Continued with Caution",
+            "message": (
+                f"Probabilitas khat {khat_pct}% berada pada rentang "
+                f"borderline dan di bawah ambang terima {accept_pct}%. "
+                "Klasifikasi jenis khat tetap dilanjutkan, tetapi hasil "
+                "wajib divalidasi secara manual."
+            ),
+            "moderate_confidence_note": (
+                "Stage 2 dilanjutkan karena citra berada pada rentang "
+                "borderline khat. Manual review wajib dilakukan."
+            ),
+            "rejection_reason": None,
+            "explanation_text": (
+                f"Probabilitas khat {khat_pct}% berada di antara ambang "
+                f"borderline dan ambang terima ({accept_pct}%). "
+                "Citra diteruskan ke klasifikasi 4 kelas dengan kehati-hatian."
+            ),
+        }
+
+    # Values below the borderline threshold remain rejected by default.
     is_mid_band = khat_probability >= reject
-    if is_borderline:
-        detection_status = "borderline_khat"
-        title = "Rejected — Borderline Non-Khat"
-    elif is_mid_band:
+
+    if is_mid_band:
         detection_status = "uncertain_khat"
         title = "Rejected — Uncertain Non-Khat"
     else:
@@ -1416,7 +1446,11 @@ def resolve_detection(
     if force_classify:
         return {
             "input_status": "uncertain",
-            "detection_status": detection_status if detection_status != "non_khat" else "uncertain_khat",
+            "detection_status": (
+                detection_status
+                if detection_status != "non_khat"
+                else "uncertain_khat"
+            ),
             "is_khat": True,
             "detection_decision": "continue_caution",
             "manual_review_required": True,
@@ -1424,16 +1458,20 @@ def resolve_detection(
             "stage2_permission": "Enabled with caution",
             "title": title.replace("Rejected — ", "") + " (Forced Continue)",
             "message": (
-                f"Khat probability is {khat_pct}% (accept ≥{accept_pct}%). "
-                "Classification was explicitly continued at user request. Manual review is required."
+                f"Khat probability is {khat_pct}% "
+                f"(accept ≥{accept_pct}%). "
+                "Classification was explicitly continued at user request. "
+                "Manual review is required."
             ),
             "moderate_confidence_note": (
-                "Classification continued despite failing Stage 1 Khat acceptance."
+                "Classification continued despite failing Stage 1 "
+                "Khat acceptance."
             ),
             "rejection_reason": None,
             "explanation_text": (
-                f"Operator force-continued classification although khat probability {khat_pct}% "
-                f"is below the accept threshold ({accept_pct}%)."
+                f"Operator force-continued classification although khat "
+                f"probability {khat_pct}% is below the accept threshold "
+                f"({accept_pct}%)."
             ),
         }
 
@@ -1452,8 +1490,10 @@ def resolve_detection(
             "Gambar bukan merupakan tulisan Arab."
         ),
         "explanation_text": (
-            f"Probabilitas khat {khat_pct}% di bawah ambang terima ({accept_pct}%). "
-            "Klasifikasi 4 kelas diblokir agar gambar di luar domain tulisan Arab tidak diberi label."
+            f"Probabilitas khat {khat_pct}% berada di bawah ambang "
+            f"borderline ({round(borderline * 100, 2)}%). "
+            "Klasifikasi 4 kelas diblokir agar gambar di luar domain "
+            "tulisan Arab tidak diberi label."
         ),
     }
 
