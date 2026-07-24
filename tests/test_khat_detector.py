@@ -9,13 +9,37 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 from services.khat_detector_service import (
     _face_roi_has_skin,
+    _latin_template_match_diagnostics,
+    _latin_template_match_hits,
     assess_calligraphy_content,
     resolve_detection,
 )
+from services.font_resolver import (
+    latin_font_diagnostics,
+    load_latin_font,
+)
+
+
+_TEST_LATIN_FONTS_USED = set()
+
+
+def _load_test_latin_font(size: int, bold: bool = False):
+    """Return a real cross-platform FreeType font or explicitly skip the test."""
+    font = load_latin_font(size, bold)
+    if font is None:
+        raise unittest.SkipTest(
+            "No supported TrueType Latin font is installed; font=None is not a valid fixture"
+        )
+    if not isinstance(font, ImageFont.FreeTypeFont):
+        raise unittest.SkipTest("Resolved Latin font is not a Pillow FreeTypeFont")
+    path = getattr(font, "path", None)
+    if path:
+        _TEST_LATIN_FONTS_USED.add(str(path))
+    return font
 
 
 class MockConfig(dict):
@@ -214,11 +238,7 @@ class CalligraphyContentGateTests(unittest.TestCase):
         else:
             img = Image.new("RGB", (480, 360), (248, 248, 248))
             draw = ImageDraw.Draw(img)
-            try:
-                from PIL import ImageFont
-                font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 90)
-            except Exception:
-                font = ImageFont.load_default()
+            font = _load_test_latin_font(90)
             draw.text((40, 120), "Lettering", fill=(15, 15, 15), font=font)
             path = self._save("latin_lettering_word.jpg", img)
         result = assess_calligraphy_content(path)
@@ -388,6 +408,34 @@ class CalligraphyContentGateTests(unittest.TestCase):
         self.assertTrue(result["is_latin_script_non_khat"], result.get("latin_gate"))
         self.assertTrue(result["is_non_khat_content"])
 
+    def test_latin_test_font_resolver_returns_truetype_or_skips(self):
+        font = _load_test_latin_font(42)
+        self.assertIsInstance(font, ImageFont.FreeTypeFont)
+
+    def test_latin_template_backend_is_available(self):
+        image = self._make_latin_word("HELLO")
+        diagnostic = _latin_template_match_diagnostics(
+            np.asarray(image.convert("L"), dtype=np.uint8)
+        )
+        self.assertTrue(diagnostic["available"], diagnostic)
+        self.assertNotEqual(diagnostic["backend"], "template_backend_unavailable")
+
+    def test_latin_template_matcher_detects_rendered_hello(self):
+        image = self._make_latin_word("HELLO")
+        hits = _latin_template_match_hits(np.asarray(image.convert("L"), dtype=np.uint8))
+        self.assertGreater(hits, 0)
+
+    def test_latin_template_matcher_detects_rendered_alphabet(self):
+        image = self._make_latin_alphabet()
+        hits = _latin_template_match_hits(np.asarray(image.convert("L"), dtype=np.uint8))
+        self.assertGreater(hits, 0)
+
+    def test_missing_windows_fonts_does_not_force_font_none_fixture(self):
+        font = _load_test_latin_font(44, bold=True)
+        self.assertIsInstance(font, ImageFont.FreeTypeFont)
+        available = latin_font_diagnostics()
+        self.assertGreater(available["font_count"], 0)
+
     def _make_dense_multiline_naskh_like(self) -> Image.Image:
         """Synthetic dense Arabic page with connected baselines and diacritics."""
         img = Image.new("RGB", (720, 520), (250, 247, 238))
@@ -556,41 +604,21 @@ class CalligraphyContentGateTests(unittest.TestCase):
     def _make_single_latin_letter(self, letter: str = "A") -> Image.Image:
         img = Image.new("RGB", (400, 400), (250, 248, 242))
         draw = ImageDraw.Draw(img)
-        try:
-            from PIL import ImageFont
-
-            font = ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", 220)
-        except OSError:
-            try:
-                from PIL import ImageFont
-
-                font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 200)
-            except OSError:
-                font = None
+        font = _load_test_latin_font(220, bold=True)
         draw.text((110, 70), letter, fill=(10, 10, 10), font=font)
         return img
 
     def _make_latin_word(self, word: str = "HELLO") -> Image.Image:
         img = Image.new("RGB", (560, 220), (252, 250, 245))
         draw = ImageDraw.Draw(img)
-        try:
-            from PIL import ImageFont
-
-            font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 72)
-        except OSError:
-            font = None
+        font = _load_test_latin_font(72)
         draw.text((40, 70), word, fill=(10, 10, 10), font=font)
         return img
 
     def _make_latin_alphabet(self) -> Image.Image:
         img = Image.new("RGB", (520, 220), (250, 248, 242))
         draw = ImageDraw.Draw(img)
-        try:
-            from PIL import ImageFont
-
-            font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 42)
-        except OSError:
-            font = None
+        font = _load_test_latin_font(42)
         draw.text((24, 70), "ABCDEFGHIJKLM", fill=(15, 15, 15), font=font)
         draw.text((24, 130), "NOPQRSTUVWXYZ", fill=(15, 15, 15), font=font)
         return img
@@ -599,14 +627,9 @@ class CalligraphyContentGateTests(unittest.TestCase):
         # Mixed-size English typography poster (user false-accept as Naskhi).
         img = Image.new("RGB", (720, 420), (248, 246, 240))
         draw = ImageDraw.Draw(img)
-        try:
-            from PIL import ImageFont
-
-            small = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 28)
-            medium = ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", 44)
-            large = ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", 64)
-        except OSError:
-            small = medium = large = None
+        small = _load_test_latin_font(28)
+        medium = _load_test_latin_font(44, bold=True)
+        large = _load_test_latin_font(64, bold=True)
         draw.text((80, 40), "the true", fill=(30, 30, 30), font=small)
         draw.text((40, 90), "DIFFERENCE", fill=(15, 15, 15), font=large)
         draw.text((70, 180), "BETWEEN", fill=(20, 20, 20), font=medium)

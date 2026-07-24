@@ -1,0 +1,441 @@
+diff --git a/services/font_resolver.py b/services/font_resolver.py
+new file mode 100644
+index 0000000..267456b
+--- /dev/null
++++ b/services/font_resolver.py
+@@ -0,0 +1,64 @@
++"""Cached cross-platform TrueType font resolution for Latin diagnostics."""
++
++from __future__ import annotations
++
++from functools import lru_cache
++from pathlib import Path
++from typing import Optional, Tuple
++
++REGULAR_LATIN_FONT_CANDIDATES: Tuple[str, ...] = (
++    r"C:\Windows\Fonts\arial.ttf",
++    r"C:\Windows\Fonts\calibri.ttf",
++    "/System/Library/Fonts/Supplemental/Arial.ttf",
++    "/Library/Fonts/Arial.ttf",
++    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
++    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
++    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
++    "/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf",
++)
++
++BOLD_LATIN_FONT_CANDIDATES: Tuple[str, ...] = (
++    r"C:\Windows\Fonts\arialbd.ttf",
++    r"C:\Windows\Fonts\calibrib.ttf",
++    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
++    "/Library/Fonts/Arial Bold.ttf",
++    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
++    "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
++    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
++    "/usr/share/fonts/opentype/noto/NotoSans-Bold.ttf",
++)
++
++
++@lru_cache(maxsize=2)
++def resolve_latin_font_paths(bold: bool = False) -> Tuple[Path, ...]:
++    """Return existing known font paths without recursive filesystem searches."""
++    candidates = BOLD_LATIN_FONT_CANDIDATES if bold else REGULAR_LATIN_FONT_CANDIDATES
++    return tuple(Path(candidate) for candidate in candidates if Path(candidate).is_file())
++
++
++@lru_cache(maxsize=64)
++def load_latin_font(size: int, bold: bool = False):
++    """Load the first usable FreeType font, or return ``None`` explicitly."""
++    try:
++        from PIL import ImageFont
++    except ImportError:
++        return None
++    for path in resolve_latin_font_paths(bold):
++        try:
++            font = ImageFont.truetype(str(path), int(size))
++        except OSError:
++            continue
++        if isinstance(font, ImageFont.FreeTypeFont):
++            return font
++    return None
++
++
++def latin_font_diagnostics() -> dict:
++    regular = resolve_latin_font_paths(False)
++    bold = resolve_latin_font_paths(True)
++    return {
++        "regular": [str(path) for path in regular],
++        "bold": [str(path) for path in bold],
++        "font_count": len(set(regular + bold)),
++    }
++
+diff --git a/services/khat_detector_service.py b/services/khat_detector_service.py
+index 0a3865b..f1436ea 100644
+--- a/services/khat_detector_service.py
++++ b/services/khat_detector_service.py
+@@ -3,6 +3,7 @@
+ import os
+ import random
+ import shutil
++from functools import lru_cache
+ from datetime import datetime
+ from typing import Dict, List, Optional, Tuple
+ 
+@@ -10,6 +11,7 @@ import numpy as np
+ from flask import current_app
+ 
+ from services.preprocessing_service import preprocess_calligraphy_image
++from services.font_resolver import load_latin_font
+ from services.training_utils import get_keras, load_json, save_json
+ 
+ DETECTOR_CLASSES = ["khat", "non_khat"]
+@@ -62,6 +64,9 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
+         "dense_arabic_page": False,
+         "latin_specimen_candidate": False,
+         "latin_template_hits": 0,
++        "latin_template_backend": "template_backend_unavailable",
++        "latin_template_font_count": 0,
++        "latin_template_available": False,
+         "latin_score": 0.0,
+         "decision_reason": "insufficient_evidence",
+     }
+@@ -173,7 +178,8 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
+         )
+ 
+     glyph_count = len(glyphs)
+-    template_hits = _latin_template_match_hits(gray_u8)
++    template_diagnostic = _latin_template_match_diagnostics(gray_u8)
++    template_hits = int(template_diagnostic["hits"])
+ 
+     # Protect Arabic calligraphy / hijaiyah strokes from Latin false positives.
+     # Connected wide strokes are strong Arabic evidence; baseline continuity alone is weaker
+@@ -204,6 +210,9 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
+             "arabic_baseline_score": round(arabic_baseline_score, 4),
+             "baseline_continuity": round(best_continuity, 4),
+             "latin_template_hits": int(template_hits),
++            "latin_template_backend": template_diagnostic["backend"],
++            "latin_template_font_count": template_diagnostic["font_count"],
++            "latin_template_available": template_diagnostic["available"],
+             "is_latin_script": False,
+             "latin_score": 0.0,
+             "decision_reason": "strong_connected_arabic",
+@@ -218,6 +227,9 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
+             "arabic_baseline_score": round(arabic_baseline_score, 4),
+             "baseline_continuity": round(best_continuity, 4),
+             "latin_template_hits": int(template_hits),
++            "latin_template_backend": template_diagnostic["backend"],
++            "latin_template_font_count": template_diagnostic["font_count"],
++            "latin_template_available": template_diagnostic["available"],
+             "is_latin_script": bool(is_single),
+             "latin_score": round(0.75 if is_single else 0.0, 4),
+             "decision_reason": "single_latin_template" if is_single else "insufficient_glyphs",
+@@ -448,6 +460,9 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
+             latin_specimen_candidate or decorative_latin_specimen
+         ),
+         "latin_template_hits": int(template_hits),
++        "latin_template_backend": template_diagnostic["backend"],
++        "latin_template_font_count": template_diagnostic["font_count"],
++        "latin_template_available": template_diagnostic["available"],
+         "latin_score": round(float(latin_score), 4),
+         "decision_reason": (
+             "dense_arabic_page"
+@@ -461,34 +476,75 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
+     }
+ 
+ 
+-def _latin_template_match_hits(gray_u8: np.ndarray) -> int:
+-    """Count high-confidence matches to Latin letter templates (strict threshold)."""
++@lru_cache(maxsize=12)
++def _latin_pillow_templates(font_size: int):
++    """Build templates once per font size for at most one regular and one bold face."""
++    from PIL import Image, ImageDraw
++
++    letters = (
++        "A", "B", "E", "F", "H", "K", "L", "M", "N", "P", "R", "T", "W", "Y",
++        "a", "e", "m", "n", "r", "t",
++    )
++    fonts = [load_latin_font(font_size, False), load_latin_font(font_size, True)]
++    fonts = [font for index, font in enumerate(fonts) if font and font not in fonts[:index]]
++    templates = []
++    for font_index, font in enumerate(fonts):
++        for ch in letters:
++            pad = max(8, font_size // 4)
++            canvas = Image.new("L", (font_size + pad * 2, font_size + pad * 2), 255)
++            ImageDraw.Draw(canvas).text((pad, pad // 2), ch, fill=0, font=font)
++            templates.append((f"pillow_{font_index}", ch, np.asarray(canvas, dtype=np.uint8)))
++    return tuple(templates)
++
++
++@lru_cache(maxsize=12)
++def _latin_hershey_templates(font_size: int):
++    """OpenCV fallback templates when no TrueType font exists."""
++    import cv2
++
++    letters = ("A", "B", "E", "F", "H", "K", "L", "M", "N", "P", "R", "T", "W", "Y")
++    templates = []
++    scale = max(float(font_size) / 32.0, 0.6)
++    thickness = max(1, int(round(scale * 1.5)))
++    for ch in letters:
++        (width, height), baseline = cv2.getTextSize(
++            ch, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness
++        )
++        canvas = np.full(
++            (height + baseline + 12, width + 12), 255, dtype=np.uint8
++        )
++        cv2.putText(
++            canvas, ch, (6, height + 4), cv2.FONT_HERSHEY_SIMPLEX,
++            scale, 0, thickness, cv2.LINE_AA,
++        )
++        templates.append(("opencv_hershey", ch, canvas))
++    return tuple(templates)
++
++
++def _latin_template_font_count() -> int:
++    return sum(load_latin_font(28, bold) is not None for bold in (False, True))
++
++
++def _latin_template_match_diagnostics(gray_u8: np.ndarray) -> Dict:
++    """Count strict Latin template matches and report backend availability."""
+     try:
+         import cv2
+-        from PIL import Image, ImageDraw, ImageFont
+     except ImportError:
+-        return 0
++        return {
++            "hits": 0,
++            "backend": "template_backend_unavailable",
++            "font_count": 0,
++            "available": False,
++        }
+ 
+     h, w = gray_u8.shape[:2]
+     if h < 24 or w < 24:
+-        return 0
+-
+-    font_paths = (
+-        r"C:\Windows\Fonts\arial.ttf",
+-        r"C:\Windows\Fonts\arialbd.ttf",
+-        r"C:\Windows\Fonts\calibri.ttf",
+-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+-        "/System/Library/Fonts/Supplemental/Arial.ttf",
+-    )
+-
+-    def _load_font(size: int):
+-        for path in font_paths:
+-            if os.path.isfile(path):
+-                try:
+-                    return ImageFont.truetype(path, size)
+-                except OSError:
+-                    continue
+-        return ImageFont.load_default()
++        return {
++            "hits": 0,
++            "backend": "no_template_match",
++            "font_count": _latin_template_font_count(),
++            "available": True,
++        }
+ 
+     targets = [gray_u8.astype(np.float32)]
+     if max(h, w) >= 220:
+@@ -503,14 +559,15 @@ def _latin_template_match_hits(gray_u8: np.ndarray) -> int:
+     )
+     # Fixed small templates + one image-scaled template for large single letters.
+     font_sizes = [28, max(36, int(0.28 * min(h, w)))]
++    font_count = _latin_template_font_count()
++    backend = "pillow_truetype" if font_count else "opencv_hershey"
+     for font_size in font_sizes:
+-        font = _load_font(font_size)
+-        for ch in letters:
+-            pad = max(8, font_size // 4)
+-            canvas = Image.new("L", (font_size + pad * 2, font_size + pad * 2), 255)
+-            draw = ImageDraw.Draw(canvas)
+-            draw.text((pad, pad // 2), ch, fill=0, font=font)
+-            tmpl = np.asarray(canvas, dtype=np.uint8)
++        templates = (
++            _latin_pillow_templates(font_size)
++            if font_count
++            else _latin_hershey_templates(font_size)
++        )
++        for _template_backend, ch, tmpl in templates:
+             ys, xs = np.where(tmpl < 200)
+             if len(xs) < 10:
+                 continue
+@@ -539,8 +596,23 @@ def _latin_template_match_hits(gray_u8: np.ndarray) -> int:
+                 seen.add(ch)
+                 hits += 1
+             if hits >= 5:
+-                return hits
+-    return hits
++                return {
++                    "hits": hits,
++                    "backend": backend,
++                    "font_count": font_count,
++                    "available": True,
++                }
++    return {
++        "hits": hits,
++        "backend": backend if hits else "no_template_match",
++        "font_count": font_count,
++        "available": True,
++    }
++
++
++def _latin_template_match_hits(gray_u8: np.ndarray) -> int:
++    """Backward-compatible integer API."""
++    return int(_latin_template_match_diagnostics(gray_u8)["hits"])
+ 
+ 
+ def _dominant_blob_photo_scores(gray: np.ndarray) -> Dict:
+diff --git a/tests/test_khat_detector.py b/tests/test_khat_detector.py
+index df975b4..1a8a590 100644
+--- a/tests/test_khat_detector.py
++++ b/tests/test_khat_detector.py
+@@ -9,13 +9,37 @@ import numpy as np
+ 
+ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ 
+-from PIL import Image, ImageDraw
++from PIL import Image, ImageDraw, ImageFont
+ 
+ from services.khat_detector_service import (
+     _face_roi_has_skin,
++    _latin_template_match_diagnostics,
++    _latin_template_match_hits,
+     assess_calligraphy_content,
+     resolve_detection,
+ )
++from services.font_resolver import (
++    latin_font_diagnostics,
++    load_latin_font,
++)
++
++
++_TEST_LATIN_FONTS_USED = set()
++
++
++def _load_test_latin_font(size: int, bold: bool = False):
++    """Return a real cross-platform FreeType font or explicitly skip the test."""
++    font = load_latin_font(size, bold)
++    if font is None:
++        raise unittest.SkipTest(
++            "No supported TrueType Latin font is installed; font=None is not a valid fixture"
++        )
++    if not isinstance(font, ImageFont.FreeTypeFont):
++        raise unittest.SkipTest("Resolved Latin font is not a Pillow FreeTypeFont")
++    path = getattr(font, "path", None)
++    if path:
++        _TEST_LATIN_FONTS_USED.add(str(path))
++    return font
+ 
+ 
+ class MockConfig(dict):
+@@ -214,11 +238,7 @@ class CalligraphyContentGateTests(unittest.TestCase):
+         else:
+             img = Image.new("RGB", (480, 360), (248, 248, 248))
+             draw = ImageDraw.Draw(img)
+-            try:
+-                from PIL import ImageFont
+-                font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 90)
+-            except Exception:
+-                font = ImageFont.load_default()
++            font = _load_test_latin_font(90)
+             draw.text((40, 120), "Lettering", fill=(15, 15, 15), font=font)
+             path = self._save("latin_lettering_word.jpg", img)
+         result = assess_calligraphy_content(path)
+@@ -388,6 +408,34 @@ class CalligraphyContentGateTests(unittest.TestCase):
+         self.assertTrue(result["is_latin_script_non_khat"], result.get("latin_gate"))
+         self.assertTrue(result["is_non_khat_content"])
+ 
++    def test_latin_test_font_resolver_returns_truetype_or_skips(self):
++        font = _load_test_latin_font(42)
++        self.assertIsInstance(font, ImageFont.FreeTypeFont)
++
++    def test_latin_template_backend_is_available(self):
++        image = self._make_latin_word("HELLO")
++        diagnostic = _latin_template_match_diagnostics(
++            np.asarray(image.convert("L"), dtype=np.uint8)
++        )
++        self.assertTrue(diagnostic["available"], diagnostic)
++        self.assertNotEqual(diagnostic["backend"], "template_backend_unavailable")
++
++    def test_latin_template_matcher_detects_rendered_hello(self):
++        image = self._make_latin_word("HELLO")
++        hits = _latin_template_match_hits(np.asarray(image.convert("L"), dtype=np.uint8))
++        self.assertGreater(hits, 0)
++
++    def test_latin_template_matcher_detects_rendered_alphabet(self):
++        image = self._make_latin_alphabet()
++        hits = _latin_template_match_hits(np.asarray(image.convert("L"), dtype=np.uint8))
++        self.assertGreater(hits, 0)
++
++    def test_missing_windows_fonts_does_not_force_font_none_fixture(self):
++        font = _load_test_latin_font(44, bold=True)
++        self.assertIsInstance(font, ImageFont.FreeTypeFont)
++        available = latin_font_diagnostics()
++        self.assertGreater(available["font_count"], 0)
++
+     def _make_dense_multiline_naskh_like(self) -> Image.Image:
+         """Synthetic dense Arabic page with connected baselines and diacritics."""
+         img = Image.new("RGB", (720, 520), (250, 247, 238))
+@@ -556,41 +604,21 @@ class CalligraphyContentGateTests(unittest.TestCase):
+     def _make_single_latin_letter(self, letter: str = "A") -> Image.Image:
+         img = Image.new("RGB", (400, 400), (250, 248, 242))
+         draw = ImageDraw.Draw(img)
+-        try:
+-            from PIL import ImageFont
+-
+-            font = ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", 220)
+-        except OSError:
+-            try:
+-                from PIL import ImageFont
+-
+-                font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 200)
+-            except OSError:
+-                font = None
++        font = _load_test_latin_font(220, bold=True)
+         draw.text((110, 70), letter, fill=(10, 10, 10), font=font)
+         return img
+ 
+     def _make_latin_word(self, word: str = "HELLO") -> Image.Image:
+         img = Image.new("RGB", (560, 220), (252, 250, 245))
+         draw = ImageDraw.Draw(img)
+-        try:
+-            from PIL import ImageFont
+-
+-            font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 72)
+-        except OSError:
+-            font = None
++        font = _load_test_latin_font(72)
+         draw.text((40, 70), word, fill=(10, 10, 10), font=font)
+         return img
+ 
+     def _make_latin_alphabet(self) -> Image.Image:
+         img = Image.new("RGB", (520, 220), (250, 248, 242))
+         draw = ImageDraw.Draw(img)
+-        try:
+-            from PIL import ImageFont
+-
+-            font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 42)
+-        except OSError:
+-            font = None
++        font = _load_test_latin_font(42)
+         draw.text((24, 70), "ABCDEFGHIJKLM", fill=(15, 15, 15), font=font)
+         draw.text((24, 130), "NOPQRSTUVWXYZ", fill=(15, 15, 15), font=font)
+         return img
+@@ -599,14 +627,9 @@ class CalligraphyContentGateTests(unittest.TestCase):
+         # Mixed-size English typography poster (user false-accept as Naskhi).
+         img = Image.new("RGB", (720, 420), (248, 246, 240))
+         draw = ImageDraw.Draw(img)
+-        try:
+-            from PIL import ImageFont
+-
+-            small = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 28)
+-            medium = ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", 44)
+-            large = ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", 64)
+-        except OSError:
+-            small = medium = large = None
++        small = _load_test_latin_font(28)
++        medium = _load_test_latin_font(44, bold=True)
++        large = _load_test_latin_font(64, bold=True)
+         draw.text((80, 40), "the true", fill=(30, 30, 30), font=small)
+         draw.text((40, 90), "DIFFERENCE", fill=(15, 15, 15), font=large)
+         draw.text((70, 180), "BETWEEN", fill=(20, 20, 20), font=medium)

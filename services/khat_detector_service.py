@@ -3,6 +3,7 @@
 import os
 import random
 import shutil
+from functools import lru_cache
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -10,6 +11,7 @@ import numpy as np
 from flask import current_app
 
 from services.preprocessing_service import preprocess_calligraphy_image
+from services.font_resolver import load_latin_font
 from services.training_utils import get_keras, load_json, save_json
 
 DETECTOR_CLASSES = ["khat", "non_khat"]
@@ -62,6 +64,9 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
         "dense_arabic_page": False,
         "latin_specimen_candidate": False,
         "latin_template_hits": 0,
+        "latin_template_backend": "template_backend_unavailable",
+        "latin_template_font_count": 0,
+        "latin_template_available": False,
         "latin_score": 0.0,
         "decision_reason": "insufficient_evidence",
     }
@@ -173,7 +178,8 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
         )
 
     glyph_count = len(glyphs)
-    template_hits = _latin_template_match_hits(gray_u8)
+    template_diagnostic = _latin_template_match_diagnostics(gray_u8)
+    template_hits = int(template_diagnostic["hits"])
 
     # Protect Arabic calligraphy / hijaiyah strokes from Latin false positives.
     # Connected wide strokes are strong Arabic evidence; baseline continuity alone is weaker
@@ -204,6 +210,9 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
             "arabic_baseline_score": round(arabic_baseline_score, 4),
             "baseline_continuity": round(best_continuity, 4),
             "latin_template_hits": int(template_hits),
+            "latin_template_backend": template_diagnostic["backend"],
+            "latin_template_font_count": template_diagnostic["font_count"],
+            "latin_template_available": template_diagnostic["available"],
             "is_latin_script": False,
             "latin_score": 0.0,
             "decision_reason": "strong_connected_arabic",
@@ -218,6 +227,9 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
             "arabic_baseline_score": round(arabic_baseline_score, 4),
             "baseline_continuity": round(best_continuity, 4),
             "latin_template_hits": int(template_hits),
+            "latin_template_backend": template_diagnostic["backend"],
+            "latin_template_font_count": template_diagnostic["font_count"],
+            "latin_template_available": template_diagnostic["available"],
             "is_latin_script": bool(is_single),
             "latin_score": round(0.75 if is_single else 0.0, 4),
             "decision_reason": "single_latin_template" if is_single else "insufficient_glyphs",
@@ -448,6 +460,9 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
             latin_specimen_candidate or decorative_latin_specimen
         ),
         "latin_template_hits": int(template_hits),
+        "latin_template_backend": template_diagnostic["backend"],
+        "latin_template_font_count": template_diagnostic["font_count"],
+        "latin_template_available": template_diagnostic["available"],
         "latin_score": round(float(latin_score), 4),
         "decision_reason": (
             "dense_arabic_page"
@@ -461,34 +476,75 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
     }
 
 
-def _latin_template_match_hits(gray_u8: np.ndarray) -> int:
-    """Count high-confidence matches to Latin letter templates (strict threshold)."""
+@lru_cache(maxsize=12)
+def _latin_pillow_templates(font_size: int):
+    """Build templates once per font size for at most one regular and one bold face."""
+    from PIL import Image, ImageDraw
+
+    letters = (
+        "A", "B", "E", "F", "H", "K", "L", "M", "N", "P", "R", "T", "W", "Y",
+        "a", "e", "m", "n", "r", "t",
+    )
+    fonts = [load_latin_font(font_size, False), load_latin_font(font_size, True)]
+    fonts = [font for index, font in enumerate(fonts) if font and font not in fonts[:index]]
+    templates = []
+    for font_index, font in enumerate(fonts):
+        for ch in letters:
+            pad = max(8, font_size // 4)
+            canvas = Image.new("L", (font_size + pad * 2, font_size + pad * 2), 255)
+            ImageDraw.Draw(canvas).text((pad, pad // 2), ch, fill=0, font=font)
+            templates.append((f"pillow_{font_index}", ch, np.asarray(canvas, dtype=np.uint8)))
+    return tuple(templates)
+
+
+@lru_cache(maxsize=12)
+def _latin_hershey_templates(font_size: int):
+    """OpenCV fallback templates when no TrueType font exists."""
+    import cv2
+
+    letters = ("A", "B", "E", "F", "H", "K", "L", "M", "N", "P", "R", "T", "W", "Y")
+    templates = []
+    scale = max(float(font_size) / 32.0, 0.6)
+    thickness = max(1, int(round(scale * 1.5)))
+    for ch in letters:
+        (width, height), baseline = cv2.getTextSize(
+            ch, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness
+        )
+        canvas = np.full(
+            (height + baseline + 12, width + 12), 255, dtype=np.uint8
+        )
+        cv2.putText(
+            canvas, ch, (6, height + 4), cv2.FONT_HERSHEY_SIMPLEX,
+            scale, 0, thickness, cv2.LINE_AA,
+        )
+        templates.append(("opencv_hershey", ch, canvas))
+    return tuple(templates)
+
+
+def _latin_template_font_count() -> int:
+    return sum(load_latin_font(28, bold) is not None for bold in (False, True))
+
+
+def _latin_template_match_diagnostics(gray_u8: np.ndarray) -> Dict:
+    """Count strict Latin template matches and report backend availability."""
     try:
         import cv2
-        from PIL import Image, ImageDraw, ImageFont
     except ImportError:
-        return 0
+        return {
+            "hits": 0,
+            "backend": "template_backend_unavailable",
+            "font_count": 0,
+            "available": False,
+        }
 
     h, w = gray_u8.shape[:2]
     if h < 24 or w < 24:
-        return 0
-
-    font_paths = (
-        r"C:\Windows\Fonts\arial.ttf",
-        r"C:\Windows\Fonts\arialbd.ttf",
-        r"C:\Windows\Fonts\calibri.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-    )
-
-    def _load_font(size: int):
-        for path in font_paths:
-            if os.path.isfile(path):
-                try:
-                    return ImageFont.truetype(path, size)
-                except OSError:
-                    continue
-        return ImageFont.load_default()
+        return {
+            "hits": 0,
+            "backend": "no_template_match",
+            "font_count": _latin_template_font_count(),
+            "available": True,
+        }
 
     targets = [gray_u8.astype(np.float32)]
     if max(h, w) >= 220:
@@ -503,14 +559,15 @@ def _latin_template_match_hits(gray_u8: np.ndarray) -> int:
     )
     # Fixed small templates + one image-scaled template for large single letters.
     font_sizes = [28, max(36, int(0.28 * min(h, w)))]
+    font_count = _latin_template_font_count()
+    backend = "pillow_truetype" if font_count else "opencv_hershey"
     for font_size in font_sizes:
-        font = _load_font(font_size)
-        for ch in letters:
-            pad = max(8, font_size // 4)
-            canvas = Image.new("L", (font_size + pad * 2, font_size + pad * 2), 255)
-            draw = ImageDraw.Draw(canvas)
-            draw.text((pad, pad // 2), ch, fill=0, font=font)
-            tmpl = np.asarray(canvas, dtype=np.uint8)
+        templates = (
+            _latin_pillow_templates(font_size)
+            if font_count
+            else _latin_hershey_templates(font_size)
+        )
+        for _template_backend, ch, tmpl in templates:
             ys, xs = np.where(tmpl < 200)
             if len(xs) < 10:
                 continue
@@ -539,8 +596,23 @@ def _latin_template_match_hits(gray_u8: np.ndarray) -> int:
                 seen.add(ch)
                 hits += 1
             if hits >= 5:
-                return hits
-    return hits
+                return {
+                    "hits": hits,
+                    "backend": backend,
+                    "font_count": font_count,
+                    "available": True,
+                }
+    return {
+        "hits": hits,
+        "backend": backend if hits else "no_template_match",
+        "font_count": font_count,
+        "available": True,
+    }
+
+
+def _latin_template_match_hits(gray_u8: np.ndarray) -> int:
+    """Backward-compatible integer API."""
+    return int(_latin_template_match_diagnostics(gray_u8)["hits"])
 
 
 def _dominant_blob_photo_scores(gray: np.ndarray) -> Dict:
