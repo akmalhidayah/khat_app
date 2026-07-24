@@ -3,12 +3,19 @@
 import os
 import sys
 import unittest
+from unittest import mock
+
+import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PIL import Image, ImageDraw
 
-from services.khat_detector_service import assess_calligraphy_content, resolve_detection
+from services.khat_detector_service import (
+    _face_roi_has_skin,
+    assess_calligraphy_content,
+    resolve_detection,
+)
 
 
 class MockConfig(dict):
@@ -45,6 +52,22 @@ class CalligraphyContentGateTests(unittest.TestCase):
         path = os.path.join(self.tmp_dir, name)
         image.save(path, format="JPEG", quality=90)
         return path
+
+    def _uploaded_fixture(self, prefix: str):
+        """Return a real uploaded regression image when it exists locally."""
+        upload_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "static",
+            "uploads",
+        )
+        if not os.path.isdir(upload_dir):
+            return None
+        for name in sorted(os.listdir(upload_dir)):
+            if name.lower().startswith(prefix.lower()):
+                path = os.path.join(upload_dir, name)
+                if os.path.isfile(path):
+                    return path
+        return None
 
     def test_rejects_person_animal_plant_photos(self):
         cases = {
@@ -253,6 +276,96 @@ class CalligraphyContentGateTests(unittest.TestCase):
         self.assertFalse(result["is_non_khat_content"], result.get("latin_gate"))
         self.assertTrue(result["looks_like_calligraphy"])
 
+    def test_accepts_dense_multiline_naskh_page(self):
+        """Dense Naskh/Quran pages must not be rejected as Latin typography."""
+        path = self._uploaded_fixture("6fe995")
+        if path is None:
+            path = self._save(
+                "dense_multiline_naskh.jpg",
+                self._make_dense_multiline_naskh_like(),
+            )
+
+        # Template matching is font/platform dependent. Keep the regression focused
+        # on the dense-Arabic layout decision while allowing minor template noise.
+        with mock.patch(
+            "services.khat_detector_service._latin_template_match_hits",
+            return_value=1,
+        ):
+            result = assess_calligraphy_content(path)
+
+        self.assertFalse(result["is_latin_script_non_khat"], result.get("latin_gate"))
+        self.assertFalse(result["is_photographic_non_khat"], result.get("scene_scores"))
+        self.assertFalse(result["is_non_khat_content"], result.get("latin_gate"))
+        self.assertTrue(result["looks_like_calligraphy"], result.get("scene_scores"))
+        gate = result.get("latin_gate") or {}
+        self.assertIn(
+            gate.get("decision_reason"),
+            {"dense_arabic_page", "strong_connected_arabic", "arabic_or_insufficient_latin_evidence"},
+            gate,
+        )
+
+    def test_accepts_circular_thuluth_composition(self):
+        """Circular monochrome Thuluth must not be rejected as a human photo."""
+        path = self._uploaded_fixture("21a505")
+        if path is None:
+            path = self._save(
+                "circular_thuluth.jpg",
+                self._make_circular_calligraphy_like(),
+            )
+
+        with mock.patch(
+            "services.khat_detector_service._latin_template_match_hits",
+            return_value=0,
+        ):
+            result = assess_calligraphy_content(path)
+
+        scene = result.get("scene_scores") or {}
+        human = scene.get("human_gate") or {}
+        self.assertFalse(human.get("is_human_photo"), human)
+        self.assertFalse(result["is_photographic_non_khat"], scene)
+        self.assertFalse(result["is_non_khat_content"], scene)
+        self.assertTrue(result["looks_like_calligraphy"], scene)
+        self.assertLessEqual(
+            float(result.get("edge_ratio") or 0),
+            float(scene.get("ink_edge_upper") or 0.48),
+        )
+
+    def test_rejects_latin_font_specimen_sheet(self):
+        """A multi-line Latin font sheet must be blocked before style prediction."""
+        path = self._uploaded_fixture("617465")
+        if path is None:
+            path = self._save(
+                "latin_font_specimen.jpg",
+                self._make_latin_font_specimen(),
+            )
+
+        with mock.patch(
+            "services.khat_detector_service._latin_template_match_hits",
+            return_value=4,
+        ):
+            result = assess_calligraphy_content(path)
+
+        gate = result.get("latin_gate") or {}
+        self.assertTrue(gate.get("latin_specimen_candidate"), gate)
+        self.assertTrue(result["is_latin_script_non_khat"], gate)
+        self.assertTrue(result["is_non_khat_content"], gate)
+        self.assertFalse(result["looks_like_calligraphy"], gate)
+        self.assertEqual(result["rejection_reason"], "Input bukan merupakan tulisan Arab.")
+
+    def test_monochrome_face_like_roi_is_not_skin(self):
+        """Black-and-white ornaments must not validate a raw Haar face hit."""
+        roi = np.full((96, 96, 3), 245, dtype=np.uint8)
+        roi[18:78, 22:74] = 20
+        self.assertFalse(_face_roi_has_skin(roi))
+
+    def test_skin_colored_roi_has_skin_evidence(self):
+        """A color face-like ROI retains enough skin evidence for photo rejection."""
+        roi = np.full((96, 96, 3), (224, 176, 145), dtype=np.uint8)
+        roi[30:38, 28:38] = (45, 30, 25)
+        roi[30:38, 58:68] = (45, 30, 25)
+        roi[64:69, 35:62] = (120, 55, 45)
+        self.assertTrue(_face_roi_has_skin(roi))
+
     def test_accepts_rendered_arabic_text_when_font_available(self):
         img = self._make_arabic_text_if_possible()
         if img is None:
@@ -274,6 +387,70 @@ class CalligraphyContentGateTests(unittest.TestCase):
         result = assess_calligraphy_content(path)
         self.assertTrue(result["is_latin_script_non_khat"], result.get("latin_gate"))
         self.assertTrue(result["is_non_khat_content"])
+
+    def _make_dense_multiline_naskh_like(self) -> Image.Image:
+        """Synthetic dense Arabic page with connected baselines and diacritics."""
+        img = Image.new("RGB", (720, 520), (250, 247, 238))
+        draw = ImageDraw.Draw(img)
+        ink = (16, 16, 16)
+        for row, y in enumerate((75, 145, 215, 285, 355, 425)):
+            draw.line([(45, y), (675, y + (row % 2) * 3)], fill=ink, width=5)
+            for col, x in enumerate(range(70, 660, 58)):
+                lift = 16 + ((col + row) % 3) * 5
+                draw.arc(
+                    [x - 25, y - lift - 12, x + 35, y + 15],
+                    start=195,
+                    end=350,
+                    fill=ink,
+                    width=4,
+                )
+                # Detached diacritics remain separate glyphs after thresholding.
+                dot_y = y - 30 - ((col + row) % 2) * 9
+                draw.ellipse([x, dot_y, x + 11, dot_y + 9], fill=ink)
+                if (col + row) % 3 == 0:
+                    draw.ellipse([x + 18, y + 12, x + 29, y + 21], fill=ink)
+        return img
+
+    def _make_circular_calligraphy_like(self) -> Image.Image:
+        """Monochrome circular calligraphy with dense but paper-like edges."""
+        img = Image.new("RGB", (520, 520), (252, 250, 244))
+        draw = ImageDraw.Draw(img)
+        ink = (14, 14, 14)
+        for inset, width in ((45, 6), (78, 5), (112, 5), (145, 4)):
+            draw.arc(
+                [inset, inset, 520 - inset, 520 - inset],
+                start=8,
+                end=352,
+                fill=ink,
+                width=width,
+            )
+        for angle_index in range(16):
+            # Radial strokes and dots imitate Thuluth ornaments without skin color.
+            x = 260 + int(155 * np.cos(angle_index * np.pi / 8.0))
+            y = 260 + int(155 * np.sin(angle_index * np.pi / 8.0))
+            draw.ellipse([x - 6, y - 6, x + 6, y + 6], fill=ink)
+        draw.arc([120, 190, 400, 330], start=185, end=355, fill=ink, width=7)
+        draw.line([(145, 275), (375, 250)], fill=ink, width=5)
+        return img
+
+    def _make_latin_font_specimen(self) -> Image.Image:
+        """Deterministic multi-row Latin-like glyph layout without font dependency."""
+        img = Image.new("RGB", (720, 500), (250, 248, 242))
+        draw = ImageDraw.Draw(img)
+        ink = (18, 18, 18)
+        for row, y in enumerate((50, 135, 220, 305, 390)):
+            for col, x in enumerate(range(42, 680, 46)):
+                height = 48 + ((row + col) % 2) * 4
+                # Narrow disconnected glyphs create weak baseline continuity,
+                # while repeated heights/rows mimic a font specimen sheet.
+                draw.rectangle([x, y, x + 7, y + height], fill=ink)
+                if col % 3 == 0:
+                    draw.line([(x, y), (x + 20, y)], fill=ink, width=5)
+                elif col % 3 == 1:
+                    draw.line([(x, y + height // 2), (x + 18, y + height // 2)], fill=ink, width=5)
+                else:
+                    draw.line([(x, y + height), (x + 20, y + height)], fill=ink, width=5)
+        return img
 
     def _make_gold_calligraphy_on_parchment(self) -> Image.Image:
         # Mimic Basmala-style gold strokes on cream parchment (user false-reject case).

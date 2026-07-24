@@ -56,8 +56,14 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
         "height_consistency": None,
         "row_alignment": None,
         "arabic_cursive_score": None,
+        "arabic_baseline_score": None,
+        "baseline_continuity": None,
+        "text_rows": 0,
+        "dense_arabic_page": False,
+        "latin_specimen_candidate": False,
         "latin_template_hits": 0,
         "latin_score": 0.0,
+        "decision_reason": "insufficient_evidence",
     }
     if gray is None or gray.size == 0:
         return empty
@@ -171,26 +177,36 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
 
     # Protect Arabic calligraphy / hijaiyah strokes from Latin false positives.
     # Connected wide strokes are strong Arabic evidence; baseline continuity alone is weaker
-    # (dense Latin lines can also look continuous).
+    # because dense Latin typography can also create a long horizontal span.
     strong_arabic = long_cursive >= 1 or arabic_cursive_score >= 0.40
     mild_arabic = arabic_baseline_score >= 0.62 and best_continuity >= 0.42
-    # Connected Latin wordmarks (e.g. cursive "Lettering") can look wide/cursive —
-    # still evaluate Latin rules when letter templates already match.
+
+    # Connected Latin wordmarks (e.g. cursive "Lettering") can look wide/cursive.
+    # Keep evaluating them when Latin templates already match.
     latin_wordmark_candidate = bool(
         template_hits >= 2
         and glyph_count <= 8
         and arabic_cursive_score < 0.55
     )
-    if not latin_wordmark_candidate and (
-        (strong_arabic and template_hits < 4) or (mild_arabic and template_hits < 2)
+
+    # Safe fast path for short, clearly connected Arabic compositions. Dense pages are
+    # evaluated below so a Latin specimen sheet cannot bypass the layout checks.
+    if (
+        not latin_wordmark_candidate
+        and strong_arabic
+        and template_hits <= 1
+        and glyph_count < 18
     ):
         return {
             **empty,
             "glyph_count": glyph_count,
             "arabic_cursive_score": round(arabic_cursive_score, 4),
+            "arabic_baseline_score": round(arabic_baseline_score, 4),
+            "baseline_continuity": round(best_continuity, 4),
             "latin_template_hits": int(template_hits),
             "is_latin_script": False,
             "latin_score": 0.0,
+            "decision_reason": "strong_connected_arabic",
         }
 
     if glyph_count <= 1 or total_ink_area <= 0:
@@ -199,9 +215,12 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
             **empty,
             "glyph_count": glyph_count,
             "arabic_cursive_score": round(arabic_cursive_score, 4),
+            "arabic_baseline_score": round(arabic_baseline_score, 4),
+            "baseline_continuity": round(best_continuity, 4),
             "latin_template_hits": int(template_hits),
             "is_latin_script": bool(is_single),
             "latin_score": round(0.75 if is_single else 0.0, 4),
+            "decision_reason": "single_latin_template" if is_single else "insufficient_glyphs",
         }
 
     areas = np.array([g["area"] for g in glyphs], dtype=np.float32)
@@ -250,8 +269,53 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
 
     is_latin = False
     n_text_rows = len(multi_glyph_rows)
+
+    # Dense multi-line Naskh/Quran pages: strong baseline continuity, many fragmented
+    # glyphs, and only a small amount of Latin-template noise. Requiring at least
+    # three text rows prevents a single wide Latin heading from taking this path.
+    dense_arabic_page = bool(
+        mild_arabic
+        and glyph_count >= 35
+        and n_text_rows >= 3
+        and template_hits <= 2
+        and arabic_baseline_score >= 0.70
+        and best_continuity >= 0.42
+    )
+
+    # Multi-line Latin font specimen/poster. One decorative word may appear cursive,
+    # but the overall sheet has repeated tall, aligned glyphs and weak baselines.
+    latin_specimen_candidate = bool(
+        template_hits >= 3
+        and glyph_count >= 18
+        and n_text_rows >= 4
+        and tall_frac >= 0.45
+        and height_consistency >= 0.55
+        and row_alignment >= 0.50
+        and largest_frac <= 0.30
+        and arabic_baseline_score < 0.55
+        and best_continuity < 0.36
+        and latin_score >= 0.40
+    )
+    decorative_latin_specimen = bool(
+        template_hits >= 4
+        and glyph_count >= 25
+        and n_text_rows >= 3
+        and tall_frac >= 0.50
+        and height_consistency >= 0.60
+        and row_alignment >= 0.55
+        and largest_frac <= 0.25
+        and arabic_baseline_score < 0.60
+        and best_continuity < 0.40
+    )
+
+    # A verified dense Arabic page must win over weak template noise. A verified
+    # specimen sheet must be rejected before the generic strong-cursive protection.
+    if dense_arabic_page:
+        is_latin = False
+    elif latin_specimen_candidate or decorative_latin_specimen:
+        is_latin = True
     # Never treat clear Arabic cursive/baseline as Latin unless templates are overwhelming.
-    if strong_arabic and template_hits < 4:
+    elif strong_arabic and template_hits < 4:
         is_latin = False
     elif mild_arabic and template_hits < 2:
         is_latin = False
@@ -376,8 +440,24 @@ def _detect_latin_alphabet_script(gray: np.ndarray) -> Dict:
         "height_consistency": round(height_consistency, 4),
         "row_alignment": round(row_alignment, 4),
         "arabic_cursive_score": round(arabic_cursive_score, 4),
+        "arabic_baseline_score": round(arabic_baseline_score, 4),
+        "baseline_continuity": round(best_continuity, 4),
+        "text_rows": int(n_text_rows),
+        "dense_arabic_page": bool(dense_arabic_page),
+        "latin_specimen_candidate": bool(
+            latin_specimen_candidate or decorative_latin_specimen
+        ),
         "latin_template_hits": int(template_hits),
         "latin_score": round(float(latin_score), 4),
+        "decision_reason": (
+            "dense_arabic_page"
+            if dense_arabic_page
+            else "latin_specimen_layout"
+            if latin_specimen_candidate or decorative_latin_specimen
+            else "latin_evidence"
+            if is_latin
+            else "arabic_or_insufficient_latin_evidence"
+        ),
     }
 
 
@@ -617,14 +697,75 @@ def _creature_photo_scores(
         return empty
 
 
-def _detect_human_presence(rgb_image) -> Dict:
-    """Detect people via OpenCV Haar face cascades.
+def _face_roi_has_skin(rgb_roi: np.ndarray) -> bool:
+    """Validate a Haar face ROI using conservative skin-color evidence.
 
-    Upper-body cascade is intentionally NOT used alone — calligraphy flourishes
-    frequently false-trigger it. Color posters without clear faces are handled by
-    the saturated blue/green poster heuristic instead.
+    Haar cascades often see circular calligraphy ornaments as faces. Monochrome
+    ink has almost no chroma, while a real color face normally contains a useful
+    amount of skin-like HSV/YCrCb pixels. Failure is conservative: the ROI is not
+    accepted as a face.
     """
-    empty = {"is_human_photo": False, "faces": 0, "upper_bodies": 0}
+    if rgb_roi is None or rgb_roi.size == 0 or rgb_roi.ndim != 3:
+        return False
+    if rgb_roi.shape[0] < 12 or rgb_roi.shape[1] < 12:
+        return False
+
+    try:
+        import cv2
+
+        roi = np.clip(rgb_roi, 0, 255).astype(np.uint8)
+        channels = roi.astype(np.float32)
+        chroma = float(
+            (
+                np.abs(channels[:, :, 0] - channels[:, :, 1])
+                + np.abs(channels[:, :, 1] - channels[:, :, 2])
+                + np.abs(channels[:, :, 0] - channels[:, :, 2])
+            ).mean()
+            / 3.0
+        )
+        if chroma < 6.0:
+            return False
+
+        hsv = cv2.cvtColor(roi, cv2.COLOR_RGB2HSV)
+        hue, sat, val = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+        hsv_skin = (
+            ((hue < 25) | (hue > 160))
+            & (sat > 30)
+            & (sat < 230)
+            & (val > 45)
+            & (val < 250)
+        )
+
+        ycrcb = cv2.cvtColor(roi, cv2.COLOR_RGB2YCrCb)
+        y, cr, cb = ycrcb[:, :, 0], ycrcb[:, :, 1], ycrcb[:, :, 2]
+        ycrcb_skin = (
+            (y > 40)
+            & (cr >= 132)
+            & (cr <= 185)
+            & (cb >= 75)
+            & (cb <= 140)
+        )
+
+        # Agreement between two color spaces is more robust than either alone.
+        skin_fraction = float((hsv_skin & ycrcb_skin).mean())
+        return skin_fraction >= 0.08
+    except Exception:
+        return False
+
+
+def _detect_human_presence(rgb_image) -> Dict:
+    """Detect people via skin-validated OpenCV Haar face cascades.
+
+    Upper-body cascade is intentionally not used alone because calligraphy
+    flourishes frequently trigger it. Raw Haar hits are retained for diagnostics,
+    but only skin-validated face boxes can reject an image as a human photo.
+    """
+    empty = {
+        "is_human_photo": False,
+        "faces": 0,
+        "raw_faces": 0,
+        "upper_bodies": 0,
+    }
     try:
         import cv2
 
@@ -649,7 +790,8 @@ def _detect_human_presence(rgb_image) -> Dict:
         face_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
         profile_path = cv2.data.haarcascades + "haarcascade_profileface.xml"
 
-        faces = 0
+        raw_faces = 0
+        skin_faces = 0
         for cascade_path, params in (
             (face_path, {"scaleFactor": 1.1, "minNeighbors": 5, "minSize": (32, 32)}),
             (profile_path, {"scaleFactor": 1.1, "minNeighbors": 5, "minSize": (32, 32)}),
@@ -658,13 +800,21 @@ def _detect_human_presence(rgb_image) -> Dict:
             if cascade.empty():
                 continue
             found = cascade.detectMultiScale(gray, **params)
-            faces += len(found)
+            raw_faces += len(found)
+            for x, y, fw, fh in found:
+                x0 = max(0, int(x))
+                y0 = max(0, int(y))
+                x1 = min(arr.shape[1], int(x + fw))
+                y1 = min(arr.shape[0], int(y + fh))
+                if x1 <= x0 or y1 <= y0:
+                    continue
+                if _face_roi_has_skin(arr[y0:y1, x0:x1]):
+                    skin_faces += 1
 
-        # Require an actual face. Calligraphy strokes must not be treated as humans.
-        is_human = bool(faces >= 1)
         return {
-            "is_human_photo": is_human,
-            "faces": int(faces),
+            "is_human_photo": bool(skin_faces >= 1),
+            "faces": int(skin_faces),
+            "raw_faces": int(raw_faces),
             "upper_bodies": 0,
         }
     except Exception:
@@ -780,7 +930,10 @@ def assess_calligraphy_content(image_path: str) -> Dict:
         )
     )
 
-    # Classic: dark strokes on light paper.
+    # Classic: dark strokes on light paper. Dense black-and-white circular
+    # compositions can have higher edge density than ordinary pages. Allow the
+    # wider 0.48 ceiling only for low-saturation paper-like images.
+    ink_edge_upper = 0.48 if (paper_ratio >= 0.35 and mean_saturation <= 0.30) else 0.42
     looks_like_ink_on_paper = (
         (not is_dominant_blob_photo)
         and (not is_human_photo)
@@ -790,7 +943,7 @@ def assess_calligraphy_content(image_path: str) -> Dict:
         and dark_ink_ratio >= 0.04
         and dark_ink_ratio <= 0.55
         and edge_ratio >= 0.035
-        and edge_ratio <= 0.38
+        and edge_ratio <= ink_edge_upper
         and blue_ratio < 0.22
         and green_ratio < 0.18
     )
@@ -900,22 +1053,33 @@ def assess_calligraphy_content(image_path: str) -> Dict:
     glyph_count = int(latin_gate.get("glyph_count") or 0)
     hc_raw = latin_gate.get("height_consistency")
     height_consistency = float(hc_raw) if hc_raw is not None else None
-    # Suppress Latin false-positives on Arabic calligraphy / hijaiyah strokes.
-    # Flourishes make height consistency low; Latin letters are usually uniform.
-    if is_latin and (
-        arabic_cursive >= 0.35
+    arabic_baseline = float(latin_gate.get("arabic_baseline_score") or 0)
+    dense_arabic_page = bool(latin_gate.get("dense_arabic_page"))
+    latin_specimen_candidate = bool(latin_gate.get("latin_specimen_candidate"))
+
+    # Suppress Latin false-positives only when Arabic evidence is strong and the
+    # template evidence is weak. A verified specimen sheet must never be cleared
+    # merely because one decorative Latin word appears cursive.
+    if is_latin and not latin_specimen_candidate and (
+        (arabic_cursive >= 0.35 and latin_hits < 3)
         or (
             looks_like_calligraphy
             and height_consistency is not None
             and height_consistency < 0.45
             and glyph_count >= 6
-            and latin_hits < 4
+            and latin_hits < 3
         )
         or (
             looks_like_calligraphy
             and latin_hits < 2
             and latin_score < 0.62
             and arabic_cursive >= 0.20
+        )
+        or (
+            looks_like_calligraphy
+            and dense_arabic_page
+            and arabic_baseline >= 0.70
+            and latin_hits <= 2
         )
     ):
         is_latin = False
@@ -944,6 +1108,7 @@ def assess_calligraphy_content(image_path: str) -> Dict:
         "light_ink_ratio": round(light_ink_ratio, 4),
         "dark_ground_ratio": round(dark_ground_ratio, 4),
         "looks_like_ink_on_paper": looks_like_ink_on_paper,
+        "ink_edge_upper": round(ink_edge_upper, 4),
         "looks_like_light_ink_on_dark": looks_like_light_ink_on_dark,
         "looks_like_calligraphy": looks_like_calligraphy,
         "is_ocean": is_ocean,
