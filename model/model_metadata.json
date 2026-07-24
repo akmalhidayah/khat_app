@@ -9,10 +9,10 @@
   "external_model_dir": "D:\\model_treaning",
   "external_labels_path": "D:\\model_treaning\\labels.txt",
   "class_indices": {
-    "diwani_jali": 0,
-    "tsuluts": 1,
-    "diwani": 2,
-    "naskhi": 3
+    "naskhi": 0,
+    "diwani": 1,
+    "diwani_jali": 2,
+    "tsuluts": 3
   },
   "class_labels": [
     "naskhi",
@@ -22,5 +22,29 @@
   ],
   "preprocessing": "teachable_machine",
   "input_size": 224,
-  "source": "external"
+  "source": "local_efficientnetb0_active",
+  "class_names": [
+    "naskhi",
+    "diwani",
+    "diwani_jali",
+    "tsuluts"
+  ],
+  "class_mapping": [
+    "naskhi",
+    "diwani",
+    "diwani_jali",
+    "tsuluts"
+  ],
+  "index_to_class": {
+    "0": "naskhi",
+    "1": "diwani",
+    "2": "diwani_jali",
+    "3": "tsuluts"
+  },
+  "display_names": {
+    "naskhi": "Naskhi",
+    "diwani": "Diwani",
+    "diwani_jali": "Diwani Jali",
+    "tsuluts": "Tsuluts"
+  }
 }

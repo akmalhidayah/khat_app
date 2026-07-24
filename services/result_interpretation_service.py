@@ -1009,9 +1009,39 @@ def build_result_analysis(result_row, saved: bool = True, tta_used: bool = False
     is_demo = model_ctx.get("is_demo_model", False)
     is_research = model_ctx.get("is_research_model", False)
 
+    stage1_status = str(
+        result_row.detection_status
+        or result_row.input_status
+        or ""
+    ).strip().lower()
+
+    stage1_requires_manual_review = stage1_status in {
+        "moderate_khat",
+        "uncertain_khat",
+        "borderline_khat",
+    }
+
     requires_manual_review = bool(
-        validation_fields["manual_review_required"] or prediction_mismatch or top_confidence_pct < 70
+        validation_fields.get("manual_review_required")
+        or prediction_mismatch
+        or stage1_requires_manual_review
+        or top_confidence_pct < 70
     )
+
+    if requires_manual_review:
+        validation_fields["manual_review_required"] = True
+        validation_fields["review_status"] = "Manual Review Required"
+
+        if validation_fields.get("final_decision") in {
+            None,
+            "",
+            "Accepted",
+            "Accepted with Caution",
+        }:
+            validation_fields["final_decision"] = (
+                "Manual Review Required"
+            )
+
     review_badge_text = validation_fields["review_status"]
 
     is_final_research_model = is_research and not is_demo

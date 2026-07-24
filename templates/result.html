@@ -161,7 +161,7 @@
     <div class="card classify-card result-prediction-card">
       <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
         <span><i class="bi bi-stars me-1"></i>Prediction Details</span>
-        <span class="manual-review-badge {% if analysis.prediction_mismatch or analysis.top_confidence_pct < 70 %}review-yes{% elif analysis.review_status == 'Review Optional' %}review-optional{% else %}review-no{% endif %}">
+        <span class="manual-review-badge {% if analysis.review_status in ['Manual Review Required', 'Manual Review Recommended'] or analysis.prediction_mismatch or analysis.top_confidence_pct < 70 %}review-yes{% elif analysis.review_status == 'Review Optional' %}review-optional{% else %}review-no{% endif %}">
           {{ analysis.review_badge_text }}
         </span>
       </div>

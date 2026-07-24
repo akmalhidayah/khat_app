@@ -1,21 +1,33 @@
 {
   "class_indices": {
-    "diwani_jali": 0,
-    "tsuluts": 1,
-    "diwani": 2,
-    "naskhi": 3
+    "naskhi": 0,
+    "diwani": 1,
+    "diwani_jali": 2,
+    "tsuluts": 3
   },
   "class_names": [
-    "diwani_jali",
-    "tsuluts",
+    "naskhi",
     "diwani",
-    "naskhi"
+    "diwani_jali",
+    "tsuluts"
   ],
   "display_names": {
-    "diwani_jali": "Diwani Jali",
-    "tsuluts": "Tsuluts",
+    "naskhi": "Naskhi",
     "diwani": "Diwani",
-    "naskhi": "Naskhi"
+    "diwani_jali": "Diwani Jali",
+    "tsuluts": "Tsuluts"
   },
-  "source": "external_labels_txt"
+  "source": "local_efficientnetb0_active",
+  "class_mapping": [
+    "naskhi",
+    "diwani",
+    "diwani_jali",
+    "tsuluts"
+  ],
+  "index_to_class": {
+    "0": "naskhi",
+    "1": "diwani",
+    "2": "diwani_jali",
+    "3": "tsuluts"
+  }
 }
