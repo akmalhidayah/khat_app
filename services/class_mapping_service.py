@@ -249,28 +249,40 @@ def resolve_model_class_indices(config=None) -> Dict[str, int]:
 
 
 def resolve_trained_class_labels(config=None) -> List[str]:
-    """Return class slugs the active model was trained on (with dataset samples when available)."""
+    """Return the fixed output labels of the active trained model.
+
+    Model output dimensions and label ordering must come from the saved
+    class-index metadata. They must never shrink based on the current
+    contents of train, validation, test, or raw dataset directories.
+    """
     if config is None:
         config = current_app.config
 
-    meta = load_trained_class_metadata(config)
-    indices = meta.get("class_indices") or {}
+    indices = resolve_model_class_indices(config)
+
     if indices:
-        ordered = [label for label, _ in sorted(indices.items(), key=lambda item: item[1])]
-    else:
-        ordered = list(meta.get("class_names") or config.get("CLASS_LABELS", []))
+        return [
+            label
+            for label, _ in sorted(
+                indices.items(),
+                key=lambda item: int(item[1]),
+            )
+        ]
 
-    from services.dataset_readiness_service import count_images_per_class
+    meta = load_trained_class_metadata(config)
 
-    for root_key in ("TRAIN_DIR", "RAW_DATASET_DIR", "DATASET_DIR"):
-        root_dir = config.get(root_key)
-        if not root_dir or not os.path.isdir(root_dir):
-            continue
-        counts = count_images_per_class(root_dir, ordered)
-        with_samples = [label for label in ordered if counts.get(label, 0) > 0]
-        if with_samples:
-            return with_samples
-    return ordered
+    class_names = list(
+        meta.get("class_names")
+        or meta.get("class_mapping")
+        or meta.get("class_labels")
+        or config.get("CLASS_LABELS", [])
+    )
+
+    return [
+        str(label).strip()
+        for label in class_names
+        if str(label).strip()
+    ]
 
 
 def trained_class_display_names(config=None) -> Dict[str, str]:
